@@ -4,7 +4,7 @@ from datetime import timedelta
 import io
 
 # ==========================================
-# 1. SYSTÈME DE SÉCURITÉ (Mot de passe)
+# 1. SYSTÈME DE SÉCURITÉ
 # ==========================================
 def check_password():
     def password_entered():
@@ -27,11 +27,11 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 2. INTERFACE VISUELLE PRINCIPALE
+# 2. INTERFACE VISUELLE
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Bienvenue ! Déposez vos exports ci-dessous. Ajustez les lignes à ignorer si besoin.")
+st.write("Bienvenue ! Déposez vos exports ci-dessous.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -59,7 +59,6 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse des fichiers et calcul en cours...'):
             try:
-                # --- VARIABLES POUR LE RAPPORT ---
                 rapport = {}
 
                 # --- A. LECTURE STOCK ---
@@ -69,6 +68,9 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 if 'CODE ARTICLE' not in df_stock.columns:
                     st.error("❌ Erreur STOCK : La colonne 'CODE ARTICLE' est introuvable.")
                     st.stop()
+
+                # NOUVEAU BOUCLIER 1 : Forcer le code article en texte et enlever les espaces
+                df_stock['CODE ARTICLE'] = df_stock['CODE ARTICLE'].astype(str).str.strip().str.upper()
 
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
                 rapport['stock_lignes'] = len(df_stock)
@@ -93,16 +95,15 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 df_production = pd.concat(liste_prod, ignore_index=True)
                 lignes_prod_initiales = len(df_production)
                 
-                # Conversion des dates et comptage des erreurs
+                # NOUVEAU BOUCLIER 2 : Nettoyer l'article de production
+                df_production['ARTICLE'] = df_production['ARTICLE'].astype(str).str.strip().str.upper()
+
                 df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], errors='coerce')
                 df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
                 
-                lignes_prod_valides = len(df_production_valide)
-                lignes_prod_ignorees = lignes_prod_initiales - lignes_prod_valides
-                
                 rapport['prod_initiales'] = lignes_prod_initiales
-                rapport['prod_valides'] = lignes_prod_valides
-                rapport['prod_ignorees'] = lignes_prod_ignorees
+                rapport['prod_valides'] = len(df_production_valide)
+                rapport['prod_ignorees'] = lignes_prod_initiales - len(df_production_valide)
 
                 df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
                 df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
@@ -112,13 +113,15 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 df_commandes = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
                 df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper()
                 
+                # NOUVEAU BOUCLIER 3 : Nettoyer l'article commandé
+                df_commandes['ARTICLE_CODE'] = df_commandes['ARTICLE_CODE'].astype(str).str.strip().str.upper()
+
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], errors='coerce')
                 lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
-                lignes_cmd_ignorees = lignes_cmd_initiales - len(df_commandes)
                 
                 rapport['cmd_valides'] = len(df_commandes)
-                rapport['cmd_ignorees'] = lignes_cmd_ignorees
+                rapport['cmd_ignorees'] = lignes_cmd_initiales - len(df_commandes)
                 
                 if 'URGENCE' not in df_commandes.columns:
                     df_commandes['URGENCE'] = 0
@@ -169,20 +172,13 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 df_final = pd.DataFrame(resultats)
                 
-                # --- E. AFFICHAGE DU RAPPORT ET DES RÉSULTATS ---
+                # --- E. AFFICHAGE DU RAPPORT ---
                 st.success("✅ Calcul terminé avec succès !")
                 
-                # Le fameux rapport de lecture
-                with st.expander("📊 Voir le rapport de lecture des données (Cliquez pour ouvrir)", expanded=True):
-                    st.write(f"- **Stock :** {rapport['stock_lignes']} articles lus en stock.")
+                with st.expander("📊 Voir le rapport de lecture des données", expanded=True):
+                    st.write(f"- **Stock :** {rapport['stock_lignes']} articles lus.")
                     st.write(f"- **Commandes :** {rapport['cmd_valides']} commandes à traiter.")
-                    if rapport['cmd_ignorees'] > 0:
-                        st.warning(f"⚠️ {rapport['cmd_ignorees']} commandes ont été ignorées car elles n'avaient pas de date de création valide.")
-                    
-                    st.write(f"- **Production :** {rapport['prod_initiales']} lignes de production lues au total.")
-                    st.write(f"  👉 Dont {rapport['prod_valides']} lignes avec des dates valides (prises en compte pour le calcul).")
-                    if rapport['prod_ignorees'] > 0:
-                        st.warning(f"⚠️ Attention : {rapport['prod_ignorees']} lignes de production ont été ignorées car la case 'Date' était vide ou illisible.")
+                    st.write(f"- **Production :** {rapport['prod_valides']} lignes valides.")
 
                 st.dataframe(df_final, use_container_width=True)
 
