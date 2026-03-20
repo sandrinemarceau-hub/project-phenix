@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta
 import io
+import re
 
 # ==========================================
 # 1. SYSTÈME DE SÉCURITÉ
@@ -26,9 +27,6 @@ def check_password():
 if not check_password():
     st.stop()
 
-# ==========================================
-# INITIALISATION DE LA MÉMOIRE
-# ==========================================
 if 'calcul_ok' not in st.session_state:
     st.session_state['calcul_ok'] = False
 
@@ -37,7 +35,7 @@ if 'calcul_ok' not in st.session_state:
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Déposez vos exports ci-dessous.")
+st.write("Déposez vos exports ci-dessous. Le système est configuré pour lire les dates au format Français.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -69,17 +67,15 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 # --- A. LECTURE STOCK ---
                 df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
-                df_stock.columns = df_stock.columns.astype(str).str.strip().str.upper()
+                # Nettoyage extrême : Majuscules + suppression des espaces multiples
+                df_stock.columns = df_stock.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
                 
                 if 'CODE ARTICLE' not in df_stock.columns:
                     st.error("❌ Erreur STOCK : La colonne 'CODE ARTICLE' est introuvable.")
                     st.stop()
 
                 df_stock['CODE ARTICLE'] = df_stock['CODE ARTICLE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
-
-                # On sauvegarde le stock brut nettoyé pour le mode détective
                 st.session_state['df_stock_brut'] = df_stock.copy()
-
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
                 rapport['stock_lignes'] = len(df_stock)
 
@@ -87,7 +83,7 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 liste_prod = []
                 for f in fichiers_prod:
                     df_temp = pd.read_excel(f, skiprows=skip_prod)
-                    df_temp.columns = df_temp.columns.astype(str).str.strip().str.upper() 
+                    df_temp.columns = df_temp.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
                     
                     colonnes_a_renommer = {
                         'CODE ART ENTREE': 'ARTICLE', 'ARTICLE CODE AE': 'ARTICLE', 'ART ENTREE': 'ARTICLE',
@@ -95,41 +91,44 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         'DATE PLANIF': 'DATE_PROD', 'DATE REALISATION': 'DATE_PROD'
                     }
                     df_temp = df_temp.rename(columns=colonnes_a_renommer)
-                    
-                    if 'ARTICLE' in df_temp.columns and 'QTE_PRODUITE' in df_temp.columns and 'DATE_PROD' in df_temp.columns:
-                        df_temp = df_temp[['ARTICLE', 'QTE_PRODUITE', 'DATE_PROD']]
-                        liste_prod.append(df_temp)
+                    liste_prod.append(df_temp) 
                 
                 df_production = pd.concat(liste_prod, ignore_index=True)
                 lignes_prod_initiales = len(df_production)
                 
-                df_production['ARTICLE'] = df_production['ARTICLE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
-                df_production['QTE_PRODUITE'] = pd.to_numeric(df_production['QTE_PRODUITE'], errors='coerce').fillna(0)
+                if 'ARTICLE' in df_production.columns:
+                    df_production['ARTICLE'] = df_production['ARTICLE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                if 'QTE_PRODUITE' in df_production.columns:
+                    df_production['QTE_PRODUITE'] = pd.to_numeric(df_production['QTE_PRODUITE'], errors='coerce').fillna(0)
 
-                df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], errors='coerce')
+                # SAUVEGARDE ULTRA-BRUTE AVANT DE TOUCHER AUX DATES (Pour le mode Détective)
+                st.session_state['df_prod_brut'] = df_production.copy()
+
+                # LE CERVEAU FRANÇAIS EST ICI (dayfirst=True)
+                df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], dayfirst=True, errors='coerce')
                 df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
                 
                 rapport['prod_initiales'] = lignes_prod_initiales
                 rapport['prod_valides'] = len(df_production_valide)
+                rapport['prod_ignorees'] = lignes_prod_initiales - len(df_production_valide)
 
                 df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
                 df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
-                
-                # On sauvegarde les prods brutes pour le mode détective
-                st.session_state['df_prod_brut'] = df_production_valide.copy()
-                
                 productions_futures = df_production_valide.to_dict('records')
 
                 # --- C. LECTURE COMMANDES ---
                 df_commandes = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
-                df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper()
+                df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
                 
                 df_commandes['ARTICLE_CODE'] = df_commandes['ARTICLE_CODE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
-
-                df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], errors='coerce')
+                
+                # Le Cerveau Français pour les commandes aussi
+                df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], dayfirst=True, errors='coerce')
+                lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
                 
                 rapport['cmd_valides'] = len(df_commandes)
+                rapport['cmd_ignorees'] = lignes_cmd_initiales - len(df_commandes)
                 
                 if 'URGENCE' not in df_commandes.columns:
                     df_commandes['URGENCE'] = 0
@@ -178,7 +177,6 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         'Date_Disponibilité': date_dispo
                     })
 
-                # On sauvegarde tout dans la mémoire
                 st.session_state['df_final'] = pd.DataFrame(resultats)
                 st.session_state['rapport'] = rapport
                 st.session_state['calcul_ok'] = True
@@ -190,7 +188,7 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
         st.warning("Veuillez déposer tous les fichiers demandés avant de lancer le calcul.")
 
 # ==========================================
-# 4. AFFICHAGE DES RÉSULTATS ET DÉTECTIVE (Hors du bouton)
+# 4. AFFICHAGE DES RÉSULTATS ET DÉTECTIVE
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
@@ -200,6 +198,8 @@ if st.session_state['calcul_ok']:
         st.write(f"- **Stock :** {rapport['stock_lignes']} articles lus.")
         st.write(f"- **Commandes :** {rapport['cmd_valides']} commandes à traiter.")
         st.write(f"- **Production :** {rapport['prod_valides']} lignes valides.")
+        if rapport['prod_ignorees'] > 0:
+            st.warning(f"⚠️ {rapport['prod_ignorees']} lignes de production ignorées (Date vide ou 'Annulé').")
 
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
@@ -216,31 +216,24 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # MODE DÉTECTIVE (100% Fonctionnel)
+    # SCANNER GLOBAL (Mode Détective Ultime)
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Mode Détective : Vérifier un article précis")
-    st.write("Le système fouillera dans vos fichiers de départ pour vérifier les données brutes.")
+    st.subheader("🕵️‍♂️ Scanner Global : Chercher un Numéro")
+    st.write("Tapez votre numéro (ex: 39586). L'outil va fouiller dans TOUTES les colonnes de votre fichier brut.")
     
-    article_test = st.text_input("Tapez le code article à vérifier (ex: 39586) et appuyez sur Entrée :")
+    recherche = st.text_input("Tapez votre numéro et appuyez sur Entrée :")
     
-    if article_test:
-        article_test = str(article_test).strip().upper()
-        
-        # 1. Vérif Stock brut (Dans la mémoire)
-        df_stock_brut = st.session_state['df_stock_brut']
-        stock_init = df_stock_brut[df_stock_brut['CODE ARTICLE'] == article_test]['STOCK DISPONIBLE'].sum()
-        st.info(f"📦 **Stock Disponible Lu :** {stock_init} unités.")
-        
-        # 2. Vérif Prod brute (Dans la mémoire)
+    if recherche:
+        recherche = str(recherche).strip().upper()
         df_prod_brut = st.session_state['df_prod_brut']
-        prods_trouvees = df_prod_brut[df_prod_brut['ARTICLE'] == article_test]
+        
+        mask = df_prod_brut.astype(str).apply(lambda x: x.str.contains(recherche, case=False, na=False))
+        prods_trouvees = df_prod_brut[mask.any(axis=1)]
         
         if not prods_trouvees.empty:
-            st.success(f"🏭 **Productions trouvées dans les fichiers ({len(prods_trouvees)} ligne(s)) :**")
-            prods_afficher = prods_trouvees.copy()
-            prods_afficher['DATE_PROD'] = prods_afficher['DATE_PROD'].dt.strftime('%d/%m/%Y')
-            prods_afficher['Date_Dispo_Reelle'] = prods_afficher['Date_Dispo_Reelle'].dt.strftime('%d/%m/%Y')
-            st.dataframe(prods_afficher[['ARTICLE', 'QTE_PRODUITE', 'DATE_PROD', 'Date_Dispo_Reelle']], use_container_width=True)
+            st.success(f"🏭 **Bingo ! {len(prods_trouvees)} ligne(s) trouvée(s) contenant '{recherche}' :**")
+            st.dataframe(prods_trouvees, use_container_width=True)
+            st.info("👆 Vérifiez la colonne DATE_PROD. Si elle est vide ou marquée 'NaT', l'outil l'ignore par sécurité.")
         else:
-            st.error(f"⚠️ Aucune production future n'a été trouvée pour l'article {article_test}.")
+            st.error(f"⚠️ Le numéro {recherche} n'existe ABSOLUMENT PAS dans les fichiers importés.")
