@@ -48,10 +48,9 @@ def nettoyage_extreme(serie):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V10")
-st.title("📦 Portail de Disponibilité - VERSION 10 🔴")
-st.error("Si vous ne voyez pas 'VERSION 10' en rouge ci-dessus, c'est que la mise à jour n'a pas marché !")
-st.write("Déposez vos exports ci-dessous. Le moteur V10 croise automatiquement toutes les colonnes de dates.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V11")
+st.title("📦 Portail de Disponibilité - VERSION 11 🔴")
+st.write("Déposez vos exports ci-dessous. Le moteur V11 (Aspirateur Universel de Dates) est activé.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -75,9 +74,9 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V10)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse Version 10 en cours...'):
+        with st.spinner('Aspiration des dates et calcul en cours...'):
             try:
                 rapport = {}
 
@@ -101,12 +100,11 @@ if st.button("🚀 Calculer les disponibilités (V10)", type="primary", use_cont
 
                 # --- B. LECTURE PRODUCTION ---
                 liste_prod = []
-                df_prod_brut_total = pd.DataFrame() # Pour garder l'original complet
+                df_prod_brut_total = pd.DataFrame() 
 
                 for f in fichiers_prod:
                     df_temp = pd.read_excel(f, skiprows=skip_prod)
                     
-                    # On garde une copie intacte pour le détective V10
                     df_temp_copy = df_temp.copy()
                     df_temp_copy['SOURCE'] = f.name
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
@@ -121,22 +119,41 @@ if st.button("🚀 Calculer les disponibilités (V10)", type="primary", use_cont
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
                         df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod], errors='coerce').fillna(0)
                         
-                        s_date = pd.Series(pd.NaT, index=df_temp.index)
+                        # LE SCAVENGER DE DATES V11
+                        date_series = None
                         colonnes_dates_possibles = ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']
                         
+                        # 1. On cherche d'abord dans les colonnes ciblées
                         for col in colonnes_dates_possibles:
                             if col in df_temp.columns:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
-                                s_date = s_date.fillna(s_test)
+                                if date_series is None:
+                                    date_series = s_test
+                                else:
+                                    date_series = date_series.fillna(s_test)
                                     
-                        df_extracted['DATE_PROD'] = s_date
+                        # 2. Sécurité ultime : On cherche dans TOUTES les colonnes qui contiennent "DATE"
+                        if date_series is None or date_series.isna().all():
+                            for col in df_temp.columns:
+                                if 'DATE' in col:
+                                    s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
+                                    if date_series is None:
+                                        date_series = s_test
+                                    else:
+                                        date_series = date_series.fillna(s_test)
+                                        
+                        # Si vraiment aucune date, on remplit de vides
+                        if date_series is None:
+                            date_series = pd.Series(pd.NaT, index=df_temp.index)
+                                    
+                        df_extracted['DATE_PROD'] = date_series
                         liste_prod.append(df_extracted)
                 
                 if not liste_prod:
                     st.error("❌ Erreur PRODUCTION : Impossible de lire les colonnes d'Article et de Quantité.")
                     st.stop()
                     
-                st.session_state['df_prod_brut'] = df_prod_brut_total # Sauvegarde totale
+                st.session_state['df_prod_brut'] = df_prod_brut_total 
                 
                 df_production = pd.concat(liste_prod, ignore_index=True)
                 lignes_prod_initiales = len(df_production)
@@ -237,7 +254,8 @@ if st.session_state['calcul_ok']:
     with st.expander("📊 Voir le rapport de lecture des données", expanded=False):
         st.write(f"- **Stock :** {rapport.get('stock_lignes', 0)} articles lus.")
         st.write(f"- **Commandes :** {rapport.get('cmd_valides', 0)} commandes à traiter.")
-        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes valides.")
+        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes de production valides (Dates et Qtés trouvées).")
+        st.write(f"- **Lignes ignorées :** {rapport.get('prod_ignorees', 0)} lignes.")
 
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
@@ -254,10 +272,10 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # SCANNER GLOBAL V10
+    # SCANNER GLOBAL V11 (Nettoyé)
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V10 (Données 100% Brutes)")
+    st.subheader("🕵️‍♂️ Scanner Global V11 (Vue Épurée)")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
@@ -268,11 +286,16 @@ if st.session_state['calcul_ok']:
         prods_trouvees = df_prod_brut[mask.any(axis=1)].copy()
         
         if not prods_trouvees.empty:
-            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) trouvée(s). Voici l'extrait EXACT de votre Excel :**")
-            # On force l'affichage propre des dates
+            # MAGIE V11 : On supprime toutes les colonnes vides (les None) pour une lecture parfaite
+            prods_trouvees = prods_trouvees.dropna(axis=1, how='all')
+            
+            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) trouvée(s). Voici l'extrait exact de vos données :**")
+            # Formatage propre des dates si elles sont reconnues
             for col in prods_trouvees.columns:
                 if pd.api.types.is_datetime64_any_dtype(prods_trouvees[col]):
                     prods_trouvees[col] = prods_trouvees[col].dt.strftime('%d/%m/%Y')
             st.dataframe(prods_trouvees, use_container_width=True)
+            
+            st.info("👆 Vérifiez la colonne DATE PLANIF ci-dessus. Si la date apparaît bien ici, le tableau des résultats plus haut DOIT l'avoir consommée !")
         else:
-            st.error(f"⚠️ Le numéro {recherche} n'existe pas.")
+            st.error(f"⚠️ Le numéro {recherche} n'existe pas ou a été ignoré.")
