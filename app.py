@@ -57,6 +57,9 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
             try:
                 # A. Lecture Stock
                 df_stock = pd.read_excel(fichier_stock)
+                # La ligne magique qui nettoie les en-têtes (enlève les espaces invisibles et met en majuscules)
+                df_stock.columns = df_stock.columns.str.strip().str.upper()
+                
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
 
                 # B. Lecture Production
