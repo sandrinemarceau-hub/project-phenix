@@ -31,7 +31,7 @@ if not check_password():
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
-    if st.button("🗑️ Forcer le redémarrage (Vider le cache)"):
+    if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
 
@@ -48,9 +48,10 @@ def nettoyage_extreme(serie):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique")
-st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Déposez vos exports ci-dessous. (Moteur V9 : Fusion des dates actives)")
+st.set_page_config(layout="wide", page_title="Portail Logistique V10")
+st.title("📦 Portail de Disponibilité - VERSION 10 🔴")
+st.error("Si vous ne voyez pas 'VERSION 10' en rouge ci-dessus, c'est que la mise à jour n'a pas marché !")
+st.write("Déposez vos exports ci-dessous. Le moteur V10 croise automatiquement toutes les colonnes de dates.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -74,9 +75,9 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V10)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Fusion des colonnes de dates et calcul en cours...'):
+        with st.spinner('Analyse Version 10 en cours...'):
             try:
                 rapport = {}
 
@@ -100,8 +101,16 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 # --- B. LECTURE PRODUCTION ---
                 liste_prod = []
+                df_prod_brut_total = pd.DataFrame() # Pour garder l'original complet
+
                 for f in fichiers_prod:
                     df_temp = pd.read_excel(f, skiprows=skip_prod)
+                    
+                    # On garde une copie intacte pour le détective V10
+                    df_temp_copy = df_temp.copy()
+                    df_temp_copy['SOURCE'] = f.name
+                    df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
+
                     df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     
                     col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
@@ -112,29 +121,25 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
                         df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod], errors='coerce').fillna(0)
                         
-                        # --- LE FUSIONNEUR DE DATES (La VRAIE solution) ---
                         s_date = pd.Series(pd.NaT, index=df_temp.index)
-                        # Ordre de priorité : Realisation d'abord, on bouche les trous avec Planif, puis Fin, etc.
                         colonnes_dates_possibles = ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']
                         
                         for col in colonnes_dates_possibles:
                             if col in df_temp.columns:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
-                                # On remplit les 'NaT' de s_date avec les dates trouvées dans s_test
                                 s_date = s_date.fillna(s_test)
                                     
                         df_extracted['DATE_PROD'] = s_date
-                        df_extracted['SOURCE'] = f.name
                         liste_prod.append(df_extracted)
                 
                 if not liste_prod:
                     st.error("❌ Erreur PRODUCTION : Impossible de lire les colonnes d'Article et de Quantité.")
                     st.stop()
                     
+                st.session_state['df_prod_brut'] = df_prod_brut_total # Sauvegarde totale
+                
                 df_production = pd.concat(liste_prod, ignore_index=True)
                 lignes_prod_initiales = len(df_production)
-                
-                st.session_state['df_prod_brut'] = df_production.copy()
                 
                 df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
                 df_production_valide = df_production_valide[df_production_valide['QTE_PRODUITE'] > 0]
@@ -249,10 +254,10 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # SCANNER GLOBAL
+    # SCANNER GLOBAL V10
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global")
+    st.subheader("🕵️‍♂️ Scanner Global V10 (Données 100% Brutes)")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
@@ -263,8 +268,11 @@ if st.session_state['calcul_ok']:
         prods_trouvees = df_prod_brut[mask.any(axis=1)].copy()
         
         if not prods_trouvees.empty:
-            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) extraite(s) contenant '{recherche}' :**")
-            prods_trouvees['DATE_PROD'] = prods_trouvees['DATE_PROD'].dt.strftime('%d/%m/%Y')
+            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) trouvée(s). Voici l'extrait EXACT de votre Excel :**")
+            # On force l'affichage propre des dates
+            for col in prods_trouvees.columns:
+                if pd.api.types.is_datetime64_any_dtype(prods_trouvees[col]):
+                    prods_trouvees[col] = prods_trouvees[col].dt.strftime('%d/%m/%Y')
             st.dataframe(prods_trouvees, use_container_width=True)
         else:
-            st.error(f"⚠️ Le numéro {recherche} n'existe pas ou la ligne a été ignorée.")
+            st.error(f"⚠️ Le numéro {recherche} n'existe pas.")
