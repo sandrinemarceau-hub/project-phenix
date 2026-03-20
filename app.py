@@ -67,7 +67,6 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 # --- A. LECTURE STOCK ---
                 df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
-                # Nettoyage extrême : Majuscules + suppression des espaces multiples
                 df_stock.columns = df_stock.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
                 
                 if 'CODE ARTICLE' not in df_stock.columns:
@@ -101,10 +100,8 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 if 'QTE_PRODUITE' in df_production.columns:
                     df_production['QTE_PRODUITE'] = pd.to_numeric(df_production['QTE_PRODUITE'], errors='coerce').fillna(0)
 
-                # SAUVEGARDE ULTRA-BRUTE AVANT DE TOUCHER AUX DATES (Pour le mode Détective)
                 st.session_state['df_prod_brut'] = df_production.copy()
 
-                # LE CERVEAU FRANÇAIS EST ICI (dayfirst=True)
                 df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], dayfirst=True, errors='coerce')
                 df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
                 
@@ -122,7 +119,6 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 
                 df_commandes['ARTICLE_CODE'] = df_commandes['ARTICLE_CODE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
                 
-                # Le Cerveau Français pour les commandes aussi
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], dayfirst=True, errors='coerce')
                 lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
@@ -195,11 +191,12 @@ if st.session_state['calcul_ok']:
     
     rapport = st.session_state['rapport']
     with st.expander("📊 Voir le rapport de lecture des données", expanded=False):
-        st.write(f"- **Stock :** {rapport['stock_lignes']} articles lus.")
-        st.write(f"- **Commandes :** {rapport['cmd_valides']} commandes à traiter.")
-        st.write(f"- **Production :** {rapport['prod_valides']} lignes valides.")
-        if rapport['prod_ignorees'] > 0:
-            st.warning(f"⚠️ {rapport['prod_ignorees']} lignes de production ignorées (Date vide ou 'Annulé').")
+        # Utilisation de .get() pour éviter toute erreur de mémoire !
+        st.write(f"- **Stock :** {rapport.get('stock_lignes', 0)} articles lus.")
+        st.write(f"- **Commandes :** {rapport.get('cmd_valides', 0)} commandes à traiter.")
+        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes valides.")
+        if rapport.get('prod_ignorees', 0) > 0:
+            st.warning(f"⚠️ {rapport.get('prod_ignorees', 0)} lignes de production ignorées (Date vide ou 'Annulé').")
 
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
