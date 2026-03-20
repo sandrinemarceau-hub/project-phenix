@@ -222,3 +222,26 @@ if st.session_state['calcul_ok']:
         mime="application/vnd.ms-excel",
         type="primary"
     )
+
+# ==========================================
+    # SCANNER GLOBAL (Mode Détective Ultime)
+    # ==========================================
+    st.divider()
+    st.subheader("🕵️‍♂️ Scanner Global : Chercher un Numéro")
+    st.write("Tapez votre numéro (ex: 39586). L'outil va fouiller dans TOUTES les colonnes de votre fichier brut.")
+    
+    recherche = st.text_input("Tapez votre numéro et appuyez sur Entrée :")
+    
+    if recherche:
+        recherche = str(recherche).strip().upper()
+        df_prod_brut = st.session_state['df_prod_brut']
+        
+        mask = df_prod_brut.astype(str).apply(lambda x: x.str.contains(recherche, case=False, na=False))
+        prods_trouvees = df_prod_brut[mask.any(axis=1)]
+        
+        if not prods_trouvees.empty:
+            st.success(f"🏭 **Bingo ! {len(prods_trouvees)} ligne(s) trouvée(s) contenant '{recherche}' :**")
+            st.dataframe(prods_trouvees, use_container_width=True)
+            st.info("👆 Vérifiez la colonne DATE_PROD. Si elle est vide ou marquée 'NaT', l'outil l'ignore par sécurité.")
+        else:
+            st.error(f"⚠️ Le numéro {recherche} n'existe ABSOLUMENT PAS dans les fichiers importés.")
