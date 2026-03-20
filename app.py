@@ -7,7 +7,6 @@ import io
 # 1. SYSTÈME DE SÉCURITÉ (Mot de passe)
 # ==========================================
 def check_password():
-    """Vérifie si l'utilisateur a le bon mot de passe."""
     def password_entered():
         if st.session_state["password"] == "Logistique2026!":
             st.session_state["password_correct"] = True
@@ -39,7 +38,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.subheader("1. Fichier Stocks")
     fichier_stock = st.file_uploader("Export_Stock.xlsx", type=['xlsx'])
-    skip_stock = st.number_input("Lignes à ignorer au début (Stock)", min_value=0, value=3, help="Si les en-têtes sont à la ligne 4, mettez 3.")
+    skip_stock = st.number_input("Lignes à ignorer au début (Stock)", min_value=0, value=3)
 
 with col2:
     st.subheader("2. Fichiers Production")
@@ -62,14 +61,11 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
             try:
                 # --- A. LECTURE STOCK ---
                 df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
-                
-                # NETTOYAGE EXTRÊME : tout en majuscules, suppression des espaces invisibles
                 df_stock.columns = df_stock.columns.astype(str).str.strip().str.upper()
                 
-                # DIAGNOSTIC
                 if 'CODE ARTICLE' not in df_stock.columns:
-                    st.error("❌ Erreur dans le fichier STOCK : La colonne 'CODE ARTICLE' est introuvable.")
-                    st.info(f"🔍 Colonnes lues par l'outil : {df_stock.columns.tolist()}")
+                    st.error("❌ Erreur STOCK : La colonne 'CODE ARTICLE' est introuvable.")
+                    st.info(f"🔍 Colonnes lues : {df_stock.columns.tolist()}")
                     st.stop()
 
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
@@ -92,11 +88,15 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         liste_prod.append(df_temp)
                 
                 if not liste_prod:
-                    st.error("❌ Erreur dans les fichiers de PRODUCTION : Colonnes introuvables. Vérifiez le nombre de lignes à ignorer.")
+                    st.error("❌ Erreur PRODUCTION : Colonnes introuvables. Vérifiez les lignes à ignorer.")
                     st.stop()
 
                 df_production = pd.concat(liste_prod, ignore_index=True)
+                
+                # SÉCURITÉ : On force la conversion en date, et on supprime les lignes sans date valide (NaT)
                 df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], errors='coerce')
+                df_production = df_production.dropna(subset=['DATE_PROD']) # <-- LA CORRECTION EST ICI
+                
                 df_production['Date_Dispo_Reelle'] = df_production['DATE_PROD'] + timedelta(days=2)
                 df_production = df_production.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
                 productions_futures = df_production.to_dict('records')
@@ -106,11 +106,14 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper()
                 
                 if 'ARTICLE_CODE' not in df_commandes.columns:
-                    st.error("❌ Erreur dans le fichier COMMANDES : La colonne 'ARTICLE_CODE' est introuvable. Vérifiez le nombre de lignes à ignorer.")
+                    st.error("❌ Erreur COMMANDES : La colonne 'ARTICLE_CODE' est introuvable.")
                     st.info(f"🔍 Colonnes lues : {df_commandes.columns.tolist()}")
                     st.stop()
 
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], errors='coerce')
+                # SÉCURITÉ : ignorer les commandes sans date de création valide
+                df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
+                
                 if 'URGENCE' not in df_commandes.columns:
                     df_commandes['URGENCE'] = 0
                 df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
@@ -146,7 +149,11 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                                 prod['QTE_PRODUITE'] -= qte_prise
                                 qte_restante -= qte_prise
                                 if qte_restante == 0:
-                                    date_dispo = prod['Date_Dispo_Reelle'].strftime('%d/%m/%Y')
+                                    # SÉCURITÉ supplémentaire au cas où
+                                    if pd.notna(prod['Date_Dispo_Reelle']):
+                                        date_dispo = prod['Date_Dispo_Reelle'].strftime('%d/%m/%Y')
+                                    else:
+                                        date_dispo = "Date de production inconnue"
                                     break
                                     
                     if qte_restante > 0:
