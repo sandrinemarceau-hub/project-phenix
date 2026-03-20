@@ -31,24 +31,24 @@ if not check_password():
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Bienvenue ! Déposez vos exports ci-dessous. Si vos tableaux ne commencent pas à la ligne 1, ajustez le compteur.")
+st.write("Bienvenue ! Déposez vos exports ci-dessous. Ajustez les lignes à ignorer si besoin.")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.subheader("1. Fichier Stocks")
     fichier_stock = st.file_uploader("Export_Stock.xlsx", type=['xlsx'])
-    skip_stock = st.number_input("Lignes à ignorer au début (Stock)", min_value=0, value=3)
+    skip_stock = st.number_input("Lignes à ignorer (Stock)", min_value=0, value=3)
 
 with col2:
     st.subheader("2. Fichiers Production")
     fichiers_prod = st.file_uploader("Glissez les fichiers (Max 3)", type=['xlsx'], accept_multiple_files=True)
-    skip_prod = st.number_input("Lignes à ignorer au début (Prod)", min_value=0, value=0)
+    skip_prod = st.number_input("Lignes à ignorer (Prod)", min_value=0, value=0)
 
 with col3:
     st.subheader("3. Fichier Commandes")
     fichier_commandes = st.file_uploader("Export_Commandes.xlsx", type=['xlsx'])
-    skip_cmd = st.number_input("Lignes à ignorer au début (Cmd)", min_value=0, value=0)
+    skip_cmd = st.number_input("Lignes à ignorer (Cmd)", min_value=0, value=0)
 
 # ==========================================
 # 3. LE MOTEUR DE CALCUL
@@ -59,16 +59,19 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse des fichiers et calcul en cours...'):
             try:
+                # --- VARIABLES POUR LE RAPPORT ---
+                rapport = {}
+
                 # --- A. LECTURE STOCK ---
                 df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
                 df_stock.columns = df_stock.columns.astype(str).str.strip().str.upper()
                 
                 if 'CODE ARTICLE' not in df_stock.columns:
                     st.error("❌ Erreur STOCK : La colonne 'CODE ARTICLE' est introuvable.")
-                    st.info(f"🔍 Colonnes lues : {df_stock.columns.tolist()}")
                     st.stop()
 
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
+                rapport['stock_lignes'] = len(df_stock)
 
                 # --- B. LECTURE PRODUCTION ---
                 liste_prod = []
@@ -87,32 +90,35 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         df_temp = df_temp[['ARTICLE', 'QTE_PRODUITE', 'DATE_PROD']]
                         liste_prod.append(df_temp)
                 
-                if not liste_prod:
-                    st.error("❌ Erreur PRODUCTION : Colonnes introuvables. Vérifiez les lignes à ignorer.")
-                    st.stop()
-
                 df_production = pd.concat(liste_prod, ignore_index=True)
+                lignes_prod_initiales = len(df_production)
                 
-                # SÉCURITÉ : On force la conversion en date, et on supprime les lignes sans date valide (NaT)
+                # Conversion des dates et comptage des erreurs
                 df_production['DATE_PROD'] = pd.to_datetime(df_production['DATE_PROD'], errors='coerce')
-                df_production = df_production.dropna(subset=['DATE_PROD']) # <-- LA CORRECTION EST ICI
+                df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
                 
-                df_production['Date_Dispo_Reelle'] = df_production['DATE_PROD'] + timedelta(days=2)
-                df_production = df_production.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
-                productions_futures = df_production.to_dict('records')
+                lignes_prod_valides = len(df_production_valide)
+                lignes_prod_ignorees = lignes_prod_initiales - lignes_prod_valides
+                
+                rapport['prod_initiales'] = lignes_prod_initiales
+                rapport['prod_valides'] = lignes_prod_valides
+                rapport['prod_ignorees'] = lignes_prod_ignorees
+
+                df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
+                df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
+                productions_futures = df_production_valide.to_dict('records')
 
                 # --- C. LECTURE COMMANDES ---
                 df_commandes = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
                 df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper()
                 
-                if 'ARTICLE_CODE' not in df_commandes.columns:
-                    st.error("❌ Erreur COMMANDES : La colonne 'ARTICLE_CODE' est introuvable.")
-                    st.info(f"🔍 Colonnes lues : {df_commandes.columns.tolist()}")
-                    st.stop()
-
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], errors='coerce')
-                # SÉCURITÉ : ignorer les commandes sans date de création valide
+                lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
+                lignes_cmd_ignorees = lignes_cmd_initiales - len(df_commandes)
+                
+                rapport['cmd_valides'] = len(df_commandes)
+                rapport['cmd_ignorees'] = lignes_cmd_ignorees
                 
                 if 'URGENCE' not in df_commandes.columns:
                     df_commandes['URGENCE'] = 0
@@ -133,14 +139,12 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                     qte_restante = qte_demandee
                     date_dispo = "Immédiate (En Stock)"
                     
-                    # 1. Taper dans le stock
                     stock_dispo = stock_actuel.get(article, 0)
                     if stock_dispo > 0:
                         qte_prise = min(stock_dispo, qte_restante)
                         stock_actuel[article] -= qte_prise
                         qte_restante -= qte_prise
                         
-                    # 2. Taper dans la prod
                     if qte_restante > 0:
                         date_dispo = None
                         for prod in productions_futures:
@@ -149,11 +153,7 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                                 prod['QTE_PRODUITE'] -= qte_prise
                                 qte_restante -= qte_prise
                                 if qte_restante == 0:
-                                    # SÉCURITÉ supplémentaire au cas où
-                                    if pd.notna(prod['Date_Dispo_Reelle']):
-                                        date_dispo = prod['Date_Dispo_Reelle'].strftime('%d/%m/%Y')
-                                    else:
-                                        date_dispo = "Date de production inconnue"
+                                    date_dispo = prod['Date_Dispo_Reelle'].strftime('%d/%m/%Y')
                                     break
                                     
                     if qte_restante > 0:
@@ -169,8 +169,21 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 df_final = pd.DataFrame(resultats)
                 
-                # --- E. AFFICHAGE ET TÉLÉCHARGEMENT ---
+                # --- E. AFFICHAGE DU RAPPORT ET DES RÉSULTATS ---
                 st.success("✅ Calcul terminé avec succès !")
+                
+                # Le fameux rapport de lecture
+                with st.expander("📊 Voir le rapport de lecture des données (Cliquez pour ouvrir)", expanded=True):
+                    st.write(f"- **Stock :** {rapport['stock_lignes']} articles lus en stock.")
+                    st.write(f"- **Commandes :** {rapport['cmd_valides']} commandes à traiter.")
+                    if rapport['cmd_ignorees'] > 0:
+                        st.warning(f"⚠️ {rapport['cmd_ignorees']} commandes ont été ignorées car elles n'avaient pas de date de création valide.")
+                    
+                    st.write(f"- **Production :** {rapport['prod_initiales']} lignes de production lues au total.")
+                    st.write(f"  👉 Dont {rapport['prod_valides']} lignes avec des dates valides (prises en compte pour le calcul).")
+                    if rapport['prod_ignorees'] > 0:
+                        st.warning(f"⚠️ Attention : {rapport['prod_ignorees']} lignes de production ont été ignorées car la case 'Date' était vide ou illisible.")
+
                 st.dataframe(df_final, use_container_width=True)
 
                 buffer = io.BytesIO()
