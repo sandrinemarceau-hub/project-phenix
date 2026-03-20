@@ -50,7 +50,7 @@ def nettoyage_extreme(serie):
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Déposez vos exports ci-dessous. Le moteur V8 d'extraction est activé.")
+st.write("Déposez vos exports ci-dessous. (Moteur V9 : Fusion des dates actives)")
 
 col1, col2, col3 = st.columns(3)
 
@@ -76,7 +76,7 @@ st.divider()
 
 if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Extraction intelligente et calcul en cours...'):
+        with st.spinner('Fusion des colonnes de dates et calcul en cours...'):
             try:
                 rapport = {}
 
@@ -112,19 +112,19 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
                         df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod], errors='coerce').fillna(0)
                         
-                        # LE CHERCHEUR DE DATE UNIVERSEL
+                        # --- LE FUSIONNEUR DE DATES (La VRAIE solution) ---
                         s_date = pd.Series(pd.NaT, index=df_temp.index)
+                        # Ordre de priorité : Realisation d'abord, on bouche les trous avec Planif, puis Fin, etc.
                         colonnes_dates_possibles = ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']
                         
                         for col in colonnes_dates_possibles:
                             if col in df_temp.columns:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
-                                if not s_test.isna().all():
-                                    s_date = s_test
-                                    break 
+                                # On remplit les 'NaT' de s_date avec les dates trouvées dans s_test
+                                s_date = s_date.fillna(s_test)
                                     
                         df_extracted['DATE_PROD'] = s_date
-                        df_extracted['SOURCE'] = f.name # Pour savoir de quel fichier ça vient !
+                        df_extracted['SOURCE'] = f.name
                         liste_prod.append(df_extracted)
                 
                 if not liste_prod:
