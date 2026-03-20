@@ -30,41 +30,46 @@ if not check_password():
 # ==========================================
 # 2. INTERFACE VISUELLE PRINCIPALE
 # ==========================================
+st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Bienvenue ! Déposez vos exports ci-dessous pour calculer les dates de disponibilité.")
+st.write("Bienvenue ! Déposez vos exports ci-dessous. Si vos tableaux ne commencent pas à la ligne 1, ajustez le compteur.")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.subheader("1. Fichier Stocks")
     fichier_stock = st.file_uploader("Export_Stock.xlsx", type=['xlsx'])
+    skip_stock = st.number_input("Lignes à ignorer au début (Stock)", min_value=0, value=3, help="Si les en-têtes sont à la ligne 4, mettez 3.")
 
 with col2:
     st.subheader("2. Fichiers Production")
     fichiers_prod = st.file_uploader("Glissez les fichiers (Max 3)", type=['xlsx'], accept_multiple_files=True)
+    skip_prod = st.number_input("Lignes à ignorer au début (Prod)", min_value=0, value=0)
 
 with col3:
     st.subheader("3. Fichier Commandes")
     fichier_commandes = st.file_uploader("Export_Commandes.xlsx", type=['xlsx'])
+    skip_cmd = st.number_input("Lignes à ignorer au début (Cmd)", min_value=0, value=0)
 
 # ==========================================
 # 3. LE MOTEUR DE CALCUL
 # ==========================================
-if st.button("🚀 Calculer les disponibilités", type="primary"):
+st.divider()
+
+if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Calcul en cours...'):
+        with st.spinner('Analyse des fichiers et calcul en cours...'):
             try:
                 # --- A. LECTURE STOCK ---
-                df_stock = pd.read_excel(fichier_stock)
+                df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
                 
                 # NETTOYAGE EXTRÊME : tout en majuscules, suppression des espaces invisibles
                 df_stock.columns = df_stock.columns.astype(str).str.strip().str.upper()
                 
-                # DIAGNOSTIC AUTOMATIQUE SI ERREUR
+                # DIAGNOSTIC
                 if 'CODE ARTICLE' not in df_stock.columns:
                     st.error("❌ Erreur dans le fichier STOCK : La colonne 'CODE ARTICLE' est introuvable.")
-                    st.info(f"🔍 Voici les colonnes que l'outil a trouvées dans votre Excel (Ligne 1) : {df_stock.columns.tolist()}")
-                    st.warning("👉 Si la liste ci-dessus affiche des choses comme 'Unnamed' ou 'Nom de la société', c'est que votre tableau ne commence pas à la Ligne 1 d'Excel.")
+                    st.info(f"🔍 Colonnes lues par l'outil : {df_stock.columns.tolist()}")
                     st.stop()
 
                 stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
@@ -72,10 +77,9 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
                 # --- B. LECTURE PRODUCTION ---
                 liste_prod = []
                 for f in fichiers_prod:
-                    df_temp = pd.read_excel(f)
-                    df_temp.columns = df_temp.columns.astype(str).str.strip().str.upper() # Nettoyage Extreme
+                    df_temp = pd.read_excel(f, skiprows=skip_prod)
+                    df_temp.columns = df_temp.columns.astype(str).str.strip().str.upper() 
                     
-                    # Dictionnaire de traduction
                     colonnes_a_renommer = {
                         'CODE ART ENTREE': 'ARTICLE', 'ARTICLE CODE AE': 'ARTICLE', 'ART ENTREE': 'ARTICLE',
                         'QTE ART ENTREE': 'QTE_PRODUITE', 'QTE AE': 'QTE_PRODUITE', 'QTE ENTREE': 'QTE_PRODUITE',
@@ -88,7 +92,7 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
                         liste_prod.append(df_temp)
                 
                 if not liste_prod:
-                    st.error("❌ Erreur dans les fichiers de PRODUCTION : Colonnes introuvables.")
+                    st.error("❌ Erreur dans les fichiers de PRODUCTION : Colonnes introuvables. Vérifiez le nombre de lignes à ignorer.")
                     st.stop()
 
                 df_production = pd.concat(liste_prod, ignore_index=True)
@@ -98,12 +102,12 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
                 productions_futures = df_production.to_dict('records')
 
                 # --- C. LECTURE COMMANDES ---
-                df_commandes = pd.read_excel(fichier_commandes)
-                df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper() # Nettoyage extreme
+                df_commandes = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
+                df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.upper()
                 
                 if 'ARTICLE_CODE' not in df_commandes.columns:
-                    st.error("❌ Erreur dans le fichier COMMANDES : La colonne 'ARTICLE_CODE' est introuvable.")
-                    st.info(f"🔍 Voici les colonnes trouvées : {df_commandes.columns.tolist()}")
+                    st.error("❌ Erreur dans le fichier COMMANDES : La colonne 'ARTICLE_CODE' est introuvable. Vérifiez le nombre de lignes à ignorer.")
+                    st.info(f"🔍 Colonnes lues : {df_commandes.columns.tolist()}")
                     st.stop()
 
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], errors='coerce')
@@ -116,7 +120,12 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
                 for index, commande in df_commandes.iterrows():
                     article = commande['ARTICLE_CODE']
                     col_qte = 'QTE_UB_CDE TOTAL' if 'QTE_UB_CDE TOTAL' in df_commandes.columns else 'QTE_UB_CDE'
-                    qte_demandee = commande.get(col_qte, 0)
+                    
+                    try:
+                        qte_demandee = float(commande.get(col_qte, 0))
+                    except:
+                        qte_demandee = 0
+                        
                     num_cmd = commande['NUM_CDE']
                     qte_restante = qte_demandee
                     date_dispo = "Immédiate (En Stock)"
@@ -154,18 +163,19 @@ if st.button("🚀 Calculer les disponibilités", type="primary"):
                 df_final = pd.DataFrame(resultats)
                 
                 # --- E. AFFICHAGE ET TÉLÉCHARGEMENT ---
-                st.success("Calcul terminé avec succès ! 🎉")
-                st.dataframe(df_final)
+                st.success("✅ Calcul terminé avec succès !")
+                st.dataframe(df_final, use_container_width=True)
 
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_final.to_excel(writer, index=False, sheet_name='Dispos')
                 
                 st.download_button(
-                    label="📥 Télécharger le fichier mis à jour",
+                    label="📥 Télécharger le fichier des disponibilités",
                     data=buffer,
                     file_name="Commandes_Disponibles.xlsx",
-                    mime="application/vnd.ms-excel"
+                    mime="application/vnd.ms-excel",
+                    type="primary"
                 )
 
             except Exception as e:
