@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta
 import io
-import re
 
 # ==========================================
 # 1. SYSTÈME DE SÉCURITÉ
@@ -30,12 +29,21 @@ if not check_password():
 if 'calcul_ok' not in st.session_state:
     st.session_state['calcul_ok'] = False
 
+# NOUVEAU : Fonction de nettoyage extrême des valeurs
+def nettoyage_extreme(serie):
+    """Force en texte, supprime le .0, met en majuscules, et supprime TOUT ce qui n'est pas lettre ou chiffre."""
+    s = serie.astype(str)
+    s = s.str.replace(r'\.0$', '', regex=True) 
+    s = s.str.upper() 
+    s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
+    return s
+
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique")
 st.title("📦 Portail de Disponibilité des Commandes")
-st.write("Déposez vos exports ci-dessous. Le système est configuré pour lire les dates au format Français.")
+st.write("Déposez vos exports ci-dessous. Le système est blindé contre les espaces invisibles de l'ERP.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -61,44 +69,53 @@ st.divider()
 
 if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse des fichiers et calcul en cours...'):
+        with st.spinner('Nettoyage brutal des en-têtes et calcul en cours...'):
             try:
                 rapport = {}
 
                 # --- A. LECTURE STOCK ---
                 df_stock = pd.read_excel(fichier_stock, skiprows=skip_stock)
-                df_stock.columns = df_stock.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
+                # Nettoyage brutal des en-têtes (Supprime tous les espaces/caractères spéciaux)
+                df_stock.columns = df_stock.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
-                if 'CODE ARTICLE' not in df_stock.columns:
-                    st.error("❌ Erreur STOCK : La colonne 'CODE ARTICLE' est introuvable.")
+                if 'CODEARTICLE' not in df_stock.columns:
+                    st.error("❌ Erreur STOCK : La colonne Code Article est introuvable.")
                     st.stop()
 
-                df_stock['CODE ARTICLE'] = df_stock['CODE ARTICLE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                df_stock['CODEARTICLE'] = nettoyage_extreme(df_stock['CODEARTICLE'])
                 st.session_state['df_stock_brut'] = df_stock.copy()
-                stock_actuel = df_stock.set_index('CODE ARTICLE')['STOCK DISPONIBLE'].to_dict()
+                
+                col_stock = 'STOCKDISPONIBLE' if 'STOCKDISPONIBLE' in df_stock.columns else df_stock.columns[-1]
+                try:
+                    stock_actuel = df_stock.set_index('CODEARTICLE')[col_stock].to_dict()
+                except:
+                    stock_actuel = {}
+                    
                 rapport['stock_lignes'] = len(df_stock)
 
                 # --- B. LECTURE PRODUCTION ---
                 liste_prod = []
                 for f in fichiers_prod:
                     df_temp = pd.read_excel(f, skiprows=skip_prod)
-                    df_temp.columns = df_temp.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
+                    # Nettoyage brutal des en-têtes pour supprimer les espaces invisibles
+                    df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     
                     colonnes_a_renommer = {
-                        'CODE ART ENTREE': 'ARTICLE', 'ARTICLE CODE AE': 'ARTICLE', 'ART ENTREE': 'ARTICLE',
-                        'QTE ART ENTREE': 'QTE_PRODUITE', 'QTE AE': 'QTE_PRODUITE', 'QTE ENTREE': 'QTE_PRODUITE',
-                        'DATE PLANIF': 'DATE_PROD', 'DATE REALISATION': 'DATE_PROD'
+                        'ARTICLECODEAE': 'ARTICLE', 'CODEARTENTREE': 'ARTICLE', 'ARTENTREE': 'ARTICLE', 
+                        'ARTICLE': 'ARTICLE', 'CODEARTICLE': 'ARTICLE',
+                        'QTEAE': 'QTE_PRODUITE', 'QTEARTENTREE': 'QTE_PRODUITE', 'QTEENTREE': 'QTE_PRODUITE',
+                        'QTE': 'QTE_PRODUITE', 'QUANTITE': 'QTE_PRODUITE',
+                        'DATEPLANIF': 'DATE_PROD', 'DATEREALISATION': 'DATE_PROD', 'DATE': 'DATE_PROD'
                     }
                     df_temp = df_temp.rename(columns=colonnes_a_renommer)
+                        
                     liste_prod.append(df_temp) 
                 
                 df_production = pd.concat(liste_prod, ignore_index=True)
                 lignes_prod_initiales = len(df_production)
                 
-                if 'ARTICLE' in df_production.columns:
-                    df_production['ARTICLE'] = df_production['ARTICLE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
-                if 'QTE_PRODUITE' in df_production.columns:
-                    df_production['QTE_PRODUITE'] = pd.to_numeric(df_production['QTE_PRODUITE'], errors='coerce').fillna(0)
+                df_production['ARTICLE'] = nettoyage_extreme(df_production['ARTICLE'])
+                df_production['QTE_PRODUITE'] = pd.to_numeric(df_production['QTE_PRODUITE'], errors='coerce').fillna(0)
 
                 st.session_state['df_prod_brut'] = df_production.copy()
 
@@ -115,33 +132,36 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
 
                 # --- C. LECTURE COMMANDES ---
                 df_commandes = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
-                df_commandes.columns = df_commandes.columns.astype(str).str.strip().str.replace(r'\s+', ' ', regex=True).str.upper()
+                df_commandes.columns = df_commandes.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
-                df_commandes['ARTICLE_CODE'] = df_commandes['ARTICLE_CODE'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.upper()
+                # Fallbacks pour les commandes
+                col_art_cmd = 'ARTICLECODE' if 'ARTICLECODE' in df_commandes.columns else 'ARTICLE'
+                col_date_cmd = 'DATECDE' if 'DATECDE' in df_commandes.columns else 'DATE'
                 
-                df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes['DATE_CDE'], dayfirst=True, errors='coerce')
+                df_commandes['ARTICLECODE_NET'] = nettoyage_extreme(df_commandes[col_art_cmd])
+                df_commandes['DATE_CDE_NET'] = pd.to_datetime(df_commandes[col_date_cmd], dayfirst=True, errors='coerce')
+                
                 lignes_cmd_initiales = len(df_commandes)
-                df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
+                df_commandes = df_commandes.dropna(subset=['DATE_CDE_NET'])
                 
                 rapport['cmd_valides'] = len(df_commandes)
-                rapport['cmd_ignorees'] = lignes_cmd_initiales - len(df_commandes)
                 
                 if 'URGENCE' not in df_commandes.columns:
                     df_commandes['URGENCE'] = 0
-                df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
+                df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE_NET'], ascending=[False, True])
 
                 # --- D. ALGORITHME D'ATTRIBUTION ---
                 resultats = []
                 for index, commande in df_commandes.iterrows():
-                    article = commande['ARTICLE_CODE']
-                    col_qte = 'QTE_UB_CDE TOTAL' if 'QTE_UB_CDE TOTAL' in df_commandes.columns else 'QTE_UB_CDE'
+                    article = commande['ARTICLECODE_NET']
+                    col_qte = 'QTEUBCDETOTAL' if 'QTEUBCDETOTAL' in df_commandes.columns else ('QTEUBCDE' if 'QTEUBCDE' in df_commandes.columns else 'QUANTITE')
                     
                     try:
                         qte_demandee = float(commande.get(col_qte, 0))
                     except:
                         qte_demandee = 0
                         
-                    num_cmd = commande['NUM_CDE']
+                    num_cmd = commande.get('NUMCDE', 'Inconnu')
                     qte_restante = qte_demandee
                     date_dispo = "Immédiate (En Stock)"
                     
@@ -163,12 +183,12 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                                     break
                                     
                     if qte_restante > 0:
-                        date_dispo = f"⚠️ Manque {qte_restante} unités"
+                        date_dispo = f"⚠️ Manque {int(qte_restante)} unités"
                         
                     resultats.append({
                         'Num_Commande': num_cmd,
                         'Article': article,
-                        'Client': commande.get('EXPE_NOM_CLIENT', 'Inconnu'),
+                        'Client': commande.get('EXPENOMCLIENT', 'Inconnu'),
                         'Quantité': qte_demandee,
                         'Date_Disponibilité': date_dispo
                     })
@@ -178,26 +198,17 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 st.session_state['calcul_ok'] = True
 
             except Exception as e:
-                st.error(f"Une erreur inattendue s'est produite : {e}")
+                st.error(f"Une erreur s'est produite. Détails : {e}")
                 st.session_state['calcul_ok'] = False
     else:
         st.warning("Veuillez déposer tous les fichiers demandés avant de lancer le calcul.")
 
 # ==========================================
-# 4. AFFICHAGE DES RÉSULTATS ET DÉTECTIVE
+# 4. AFFICHAGE DES RÉSULTATS
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
     
-    rapport = st.session_state['rapport']
-    with st.expander("📊 Voir le rapport de lecture des données", expanded=False):
-        # Utilisation de .get() pour éviter toute erreur de mémoire !
-        st.write(f"- **Stock :** {rapport.get('stock_lignes', 0)} articles lus.")
-        st.write(f"- **Commandes :** {rapport.get('cmd_valides', 0)} commandes à traiter.")
-        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes valides.")
-        if rapport.get('prod_ignorees', 0) > 0:
-            st.warning(f"⚠️ {rapport.get('prod_ignorees', 0)} lignes de production ignorées (Date vide ou 'Annulé').")
-
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
     buffer = io.BytesIO()
@@ -211,26 +222,3 @@ if st.session_state['calcul_ok']:
         mime="application/vnd.ms-excel",
         type="primary"
     )
-
-    # ==========================================
-    # SCANNER GLOBAL (Mode Détective Ultime)
-    # ==========================================
-    st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global : Chercher un Numéro")
-    st.write("Tapez votre numéro (ex: 39586). L'outil va fouiller dans TOUTES les colonnes de votre fichier brut.")
-    
-    recherche = st.text_input("Tapez votre numéro et appuyez sur Entrée :")
-    
-    if recherche:
-        recherche = str(recherche).strip().upper()
-        df_prod_brut = st.session_state['df_prod_brut']
-        
-        mask = df_prod_brut.astype(str).apply(lambda x: x.str.contains(recherche, case=False, na=False))
-        prods_trouvees = df_prod_brut[mask.any(axis=1)]
-        
-        if not prods_trouvees.empty:
-            st.success(f"🏭 **Bingo ! {len(prods_trouvees)} ligne(s) trouvée(s) contenant '{recherche}' :**")
-            st.dataframe(prods_trouvees, use_container_width=True)
-            st.info("👆 Vérifiez la colonne DATE_PROD. Si elle est vide ou marquée 'NaT', l'outil l'ignore par sécurité.")
-        else:
-            st.error(f"⚠️ Le numéro {recherche} n'existe ABSOLUMENT PAS dans les fichiers importés.")
