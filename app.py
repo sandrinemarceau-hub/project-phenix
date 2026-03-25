@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V31")
-st.title("📦 Portail de Disponibilité - VERSION 31 🔴")
-st.write("Ciblage absolu des colonnes d'usines (MGC/RIVA).")
+st.set_page_config(layout="wide", page_title="Portail Logistique V32")
+st.title("📦 Portail de Disponibilité - VERSION 32 🔴")
+st.write("Algorithme de Chaînage en Cascade Multi-Niveaux et Diagnostic Avancé.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,9 +288,9 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V32)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse et extraction en cours...'):
+        with st.spinner('Calcul et chaînage en cascade...'):
             try:
                 log_diagnostic = []
                 
@@ -378,7 +378,7 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                 df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
-                # --- C. LECTURE PRODUCTION (AVEC VOS COLONNES EN ABSOLUE PRIORITE) ---
+                # --- C. LECTURE PRODUCTION ---
                 liste_prod = []
                 df_prod_brut_total = pd.DataFrame() 
 
@@ -391,10 +391,9 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                     colonnes_temp = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     df_temp.columns = colonnes_temp
                     
-                    # C'EST ICI LA MAGIE V31 ! 
-                    # Vos colonnes sont en toute première position pour qu'elles écrasent le reste.
                     liste_articles_prod = ['CODEARTENTREE', 'ARTENTREE', 'ARTICLECODEAE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
-                    liste_qtes_prod = ['QTEARTENTREE', 'QTEENTREE', 'QTEAE', 'RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QUANTITE', 'QTE', 'QTEFABRIQUEE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL']
+                    # Sécurité maximale : Reste à faire repasse devant en cas de doute de l'ERP
+                    liste_qtes_prod = ['RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QTEARTENTREE', 'QTEENTREE', 'QTEAE', 'QUANTITE', 'QTE', 'QTEFABRIQUEE']
                     
                     col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
                     col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
@@ -408,7 +407,7 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                         df_ext['QTE_PRODUITE'] = nettoyage_quantite(df_temp[col_qte_prod])
                         
                         date_series = None
-                        col_date_utilisee = "Aucune"
+                        col_date_utilisee = ""
                         for col in colonnes_dates_potentielles:
                             s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
                             if not s_test.isna().all():
@@ -417,14 +416,19 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                                     col_date_utilisee = col
                                 else:
                                     date_series = date_series.fillna(s_test)
+                                    col_date_utilisee += f" + {col}"
                                         
                         df_ext['DATE_PROD'] = date_series if date_series is not None else pd.Series(pd.NaT, index=df_temp.index)
-                        liste_prod.append(df_ext)
                         
-                        log_diagnostic.append(f"✅ **{f.name}** : Article = `{col_art_prod}`, Quantité = `{col_qte_prod}`, Date = `{col_date_utilisee}`")
+                        # Diagnostic enrichi
+                        total_lu = df_ext['QTE_PRODUITE'].sum()
+                        dates_valides = df_ext['DATE_PROD'].notna().sum()
+                        
+                        liste_prod.append(df_ext)
+                        log_diagnostic.append(f"✅ **{f.name}** : Art=`{col_art_prod}`, Qté=`{col_qte_prod}`, Date=`{col_date_utilisee}`. Résultat: {int(total_lu)} btls trouvées, {dates_valides} dates lues.")
                     else:
                         log_diagnostic.append(f"❌ **{f.name}** : Ignoré (Article ou Qté introuvable)")
-                        st.warning(f"⚠️ Alerte Fichier Ignoré : Le fichier '{f.name}' n'a pas pu être lu. \n\n 🔍 Voici les colonnes que j'ai trouvées dedans : {colonnes_temp.tolist()}")
+                        st.warning(f"⚠️ Alerte Fichier Ignoré : {f.name}")
                 
                 st.session_state['log_diagnostic'] = log_diagnostic
                 st.session_state['df_prod_brut'] = df_prod_brut_total 
@@ -472,7 +476,20 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
                 df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
 
-                # --- E. ALGORITHME AVEC CHAÎNAGE ---
+                # --- E. ALGORITHME AVEC CHAÎNAGE EN CASCADE ---
+                
+                # Fonction pour récupérer tous les parents d'un article
+                def get_cascade_prepas(art_code):
+                    cascade = []
+                    courant = dict_prepa.get(art_code)
+                    for _ in range(5): # Remonte jusqu'à 5 niveaux
+                        if courant and courant not in cascade:
+                            cascade.append(courant)
+                            courant = dict_prepa.get(courant)
+                        else:
+                            break
+                    return cascade
+
                 resultats = []
                 for index, commande in df_commandes.iterrows():
                     article = commande['ARTICLE_CODE']
@@ -502,19 +519,24 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
                                     if qte_a_trouver == 0: break
                         return q_stk, q_prd, qte_a_trouver
 
+                    # 1. On cherche l'article final
                     qs1, qp1, qte_restante = consommer(article, qte_restante)
                     qte_prise_stock += qs1
                     qte_prise_prod += qp1
                     
                     utilise_prepa = "Non"
-                    if qte_restante > 0 and article in dict_prepa:
-                        prepa = dict_prepa[article]
-                        qs2, qp2, qte_restante = consommer(prepa, qte_restante)
-                        qte_prise_stock += qs2
-                        qte_prise_prod += qp2
-                        if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
+                    
+                    # 2. S'il en manque, on remonte toute la cascade !
+                    if qte_restante > 0:
+                        cascade = get_cascade_prepas(article)
+                        for prepa in cascade:
+                            if qte_restante <= 0: break
+                            qs2, qp2, qte_restante = consommer(prepa, qte_restante)
+                            qte_prise_stock += qs2
+                            qte_prise_prod += qp2
+                            if (qs2 + qp2) > 0: 
+                                utilise_prepa = f"Oui ({prepa})"
 
-                    # V31 : Affichage des dates partielles
                     if qte_restante > 0:
                         if len(dates_trouvees) > 0:
                             date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"
@@ -562,11 +584,11 @@ if st.button("🚀 Calculer les disponibilités (V31)", type="primary", use_cont
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
     
-    with st.expander("🛠️ Mode Diagnostic (Voir ce que Python a lu dans vos usines)"):
-        st.write("Voici comment Python a interprété vos fichiers de Production :")
+    with st.expander("🛠️ Mode Diagnostic Ultime"):
+        st.write("Résultats de la lecture de vos usines :")
         for log in st.session_state.get('log_diagnostic', []):
             st.write(log)
-        st.write("*Vos colonnes 'QTE ENTREE' et 'QTE ART ENTREE' sont désormais en priorité n°1 absolue.*")
+        st.write("*Si 'Résultat' indique 0 bouteille ou 0 date lue, c'est que la colonne est vide dans l'Excel.*")
 
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
@@ -576,7 +598,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V31.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V32.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -584,10 +606,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V31
+    # SCANNER GLOBAL V32
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V31")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V32")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
