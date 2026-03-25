@@ -45,27 +45,26 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
     return s
 
-# NOUVEAU : Lecteur Universel (Spécial OpenOffice)
+# NOUVEAU : Lecteur Universel V13 avec Auto-détection (sep=None)
 def lire_fichier(fichier, lignes_a_ignorer):
     nom = fichier.name.lower()
+    fichier.seek(0)
     if nom.endswith('.csv'):
-        # On essaie d'abord avec le point-virgule (Standard OpenOffice/Excel Français)
         try:
-            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=';', encoding='latin-1')
+            # sep=None force Pandas à deviner le séparateur (, ou ;) tout seul !
+            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=None, engine='python', encoding='utf-8')
         except:
-            # Si ça plante, on essaie avec la virgule (Standard Américain)
             fichier.seek(0)
-            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=',', encoding='utf-8')
+            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=None, engine='python', encoding='latin-1')
     else:
-        # Pour les xls ou xlsx
         return pd.read_excel(fichier, skiprows=lignes_a_ignorer)
 
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V12")
-st.title("📦 Portail de Disponibilité - VERSION 12 🔴 (Compatible OpenOffice)")
-st.write("Enregistrez vos fichiers en **.CSV** depuis OpenOffice et déposez-les ci-dessous.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V13")
+st.title("📦 Portail de Disponibilité - VERSION 13 🔴")
+st.write("Le lecteur CSV intelligent à auto-détection est activé.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -89,9 +88,9 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V12)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Lecture universelle et calcul en cours...'):
+        with st.spinner('Lecture auto-détectée et calcul en cours...'):
             try:
                 rapport = {}
 
@@ -104,6 +103,7 @@ if st.button("🚀 Calculer les disponibilités (V12)", type="primary", use_cont
                 
                 if not col_art_stock:
                     st.error("❌ Erreur STOCK : La colonne Code Article est introuvable.")
+                    st.info(f"🔍 Colonnes lues par l'outil : {df_stock_brut.columns.tolist()}")
                     st.stop()
 
                 df_stock = pd.DataFrame()
@@ -132,7 +132,6 @@ if st.button("🚀 Calculer les disponibilités (V12)", type="primary", use_cont
                     if col_art_prod and col_qte_prod:
                         df_extracted = pd.DataFrame()
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
-                        # Gestion des virgules pour OpenOffice
                         df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                         
                         date_series = None
@@ -283,10 +282,10 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # SCANNER GLOBAL V12
+    # SCANNER GLOBAL V13
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V12")
+    st.subheader("🕵️‍♂️ Scanner Global V13")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
