@@ -125,8 +125,8 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V16")
-st.title("📦 Portail de Disponibilité - VERSION 16 🔴 (Chaînage & PDF)")
+st.set_page_config(layout="wide", page_title="Portail Logistique V16.1")
+st.title("📦 Portail de Disponibilité - VERSION 16.1 🔴 (Chaînage & PDF)")
 st.write("Le Chaînage de production (ART PREPA) et l'export Packing List sont activés !")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -156,7 +156,7 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V16)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V16.1)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse avec chaînage de production en cours...'):
             try:
@@ -176,13 +176,17 @@ if st.button("🚀 Calculer les disponibilités (V16)", type="primary", use_cont
                     c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
                     
                     if c_art:
+                        # CORRECTION ICI : On nettoie toute la colonne d'un coup
                         df_nom_brut['CLEAN_ART'] = nettoyage_extreme(df_nom_brut[c_art])
+                        if c_prepa:
+                            df_nom_brut['CLEAN_PREPA'] = nettoyage_extreme(df_nom_brut[c_prepa])
+                            
                         for _, r in df_nom_brut.iterrows():
                             art_id = str(r['CLEAN_ART'])
-                            prepa_id = nettoyage_extreme(r[c_prepa]) if c_prepa else ""
+                            prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
                             
                             if prepa_id and prepa_id != "NAN" and prepa_id != art_id:
-                                dict_prepa[art_id] = str(prepa_id)
+                                dict_prepa[art_id] = prepa_id
                                 
                             dict_details[art_id] = {
                                 'libelle': str(r[c_lib]) if c_lib else "Inconnu",
@@ -360,7 +364,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V16.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V16_1.xlsx", type="primary")
 
     with c_btn2:
         if FPDF_OK:
@@ -369,9 +373,9 @@ if st.session_state['calcul_ok']:
         else:
             st.warning("⚠️ Pour activer le bouton PDF, votre serveur doit avoir le module 'fpdf'. Ajoutez 'fpdf' dans votre fichier requirements.txt.")
 
-    # SCANNER GLOBAL V16
+    # SCANNER GLOBAL V16.1
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V16")
+    st.subheader("🕵️‍♂️ Scanner Global V16.1")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     if recherche:
         recherche = str(recherche).strip().upper()
