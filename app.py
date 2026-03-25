@@ -445,4 +445,159 @@ if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_cont
                 
                 col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
                 col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
-                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEU
+                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None)
+                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
+                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None)
+                
+                col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
+                col_ville = next((c for c in colonnes_cmd if 'VILLE' in c or 'CITY' in c), None)
+                col_pays = next((c for c in colonnes_cmd if 'PAYS' in c or 'COUNTRY' in c), None)
+                col_exportateur = next((c for c in colonnes_cmd if 'EXPORT' in c or 'SOCIETE' in c or 'FILIALE' in c or 'STEAPP' in c), None)
+                
+                df_commandes = pd.DataFrame()
+                df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
+                df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
+                df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
+                df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
+                df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
+                
+                df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
+                df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
+                df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
+                df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
+                
+                df_commandes['URGENCE'] = 0
+                df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
+                df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
+
+                # --- E. ALGORITHME AVEC CHAÎNAGE ---
+                resultats = []
+                for index, commande in df_commandes.iterrows():
+                    article = commande['ARTICLE_CODE']
+                    qte_restante = commande['QUANTITE']
+                    
+                    qte_prise_stock = 0
+                    qte_prise_prod = 0
+                    dates_trouvees = []
+                    
+                    def consommer(code_a_chercher, qte_a_trouver):
+                        q_stk, q_prd = 0, 0
+                        s = stock_actuel.get(code_a_chercher, 0)
+                        if s > 0:
+                            prise = min(s, qte_a_trouver)
+                            stock_actuel[code_a_chercher] -= prise
+                            q_stk += prise
+                            qte_a_trouver -= prise
+                            
+                        if qte_a_trouver > 0:
+                            for prod in productions_futures:
+                                if prod['ARTICLE'] == code_a_chercher and prod['QTE_PRODUITE'] > 0:
+                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver)
+                                    prod['QTE_PRODUITE'] -= prise
+                                    q_prd += prise
+                                    qte_a_trouver -= prise
+                                    dates_trouvees.append(prod['Date_Dispo_Reelle'])
+                                    if qte_a_trouver == 0: break
+                        return q_stk, q_prd, qte_a_trouver
+
+                    qs1, qp1, qte_restante = consommer(article, qte_restante)
+                    qte_prise_stock += qs1
+                    qte_prise_prod += qp1
+                    
+                    utilise_prepa = "Non"
+                    if qte_restante > 0 and article in dict_prepa:
+                        prepa = dict_prepa[article]
+                        qs2, qp2, qte_restante = consommer(prepa, qte_restante)
+                        qte_prise_stock += qs2
+                        qte_prise_prod += qp2
+                        if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
+
+                    if qte_restante > 0:
+                        statut = "Rupture"
+                        date_dispo = "Pas de date"
+                    else:
+                        if len(dates_trouvees) == 0:
+                            date_dispo = "Immédiate"
+                            statut = "En Stock"
+                        else:
+                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y')
+                            statut = "Attente Prod"
+                        
+                    resultats.append({
+                        'Num_Commande': commande['NUM_CDE'],
+                        'Client': commande['CLIENT'],
+                        'Adresse': commande['ADRESSE'],
+                        'Ville': commande['VILLE'],
+                        'Pays': commande['PAYS'],
+                        'Exportateur': commande['EXPORTATEUR'],
+                        'Article': article,
+                        'Qte_Demandée': int(commande['QUANTITE']),
+                        'Tiré_Stock': int(qte_prise_stock),
+                        'Tiré_Prod': int(qte_prise_prod),
+                        'Remplacement_Prepa': utilise_prepa,
+                        'Manquant': int(qte_restante),
+                        'Statut': statut,
+                        'Date_Disponibilité': date_dispo
+                    })
+
+                st.session_state['df_final'] = pd.DataFrame(resultats)
+                st.session_state['calcul_ok'] = True
+
+            except Exception as e:
+                st.error(f"Une erreur s'est produite. Détails : {e}")
+                st.session_state['calcul_ok'] = False
+    else:
+        st.warning("Veuillez déposer Stock, Prod, Commandes et Nomenclatures.")
+
+# ==========================================
+# 4. AFFICHAGE ET EXPORT PDF
+# ==========================================
+if st.session_state['calcul_ok']:
+    st.success("✅ Calcul terminé avec succès !")
+    colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
+    st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
+
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V27.xlsx", type="primary")
+
+    with c_btn2:
+        if REPORTLAB_OK:
+            zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
+            st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
+
+    # ==========================================
+    # SCANNER GLOBAL V27
+    # ==========================================
+    st.divider()
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V27")
+    recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
+    
+    if recherche:
+        rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
+        col_s1, col_s2, col_s3 = st.columns(3)
+        
+        def display_scan(df_name, title, col):
+            if df_name in st.session_state:
+                df = st.session_state[df_name]
+                def match_cell(val):
+                    val_c = re.sub(r'[^A-Z0-9]', '', str(val).upper().replace('.0', '')).lstrip('0')
+                    return rech_clean in val_c if rech_clean else False
+                
+                mask = df.applymap(match_cell)
+                res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
+                col.write(f"**{title} : {len(res)} ligne(s)**")
+                if not res.empty:
+                    for c in res.columns:
+                        if pd.api.types.is_datetime64_any_dtype(res[c]):
+                            res[c] = res[c].dt.strftime('%d/%m/%Y')
+                    col.dataframe(res, use_container_width=True)
+                else:
+                    col.info("Introuvable.")
+
+        display_scan('df_stock_brut', '📦 STOCK', col_s1)
+        display_scan('df_prod_brut', '🏭 PRODUCTION', col_s2)
+        display_scan('df_nom_brut', '🧠 NOMENCLATURE', col_s3)
