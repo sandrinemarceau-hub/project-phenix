@@ -51,7 +51,6 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'\.0$', '', regex=True) 
     s = s.str.upper() 
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
-    # Le destructeur de zéros qui a sauvé l'article 85633 !
     s = s.str.lstrip('0') 
     s = s.replace('', '0') 
     return s
@@ -143,9 +142,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V20")
-st.title("📦 Portail de Disponibilité - VERSION 20 🔴")
-st.write("Équilibre parfait : Zéros retirés pour le Stock ET Colonnes strictes pour la Prod.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V21")
+st.title("📦 Portail de Disponibilité - VERSION 21 🔴")
+st.write("Intégration de la colonne 'STOCK PHYSIQUE' en priorité absolue.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -174,7 +173,7 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V20)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V21)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Calcul et chaînage final en cours...'):
             try:
@@ -215,9 +214,14 @@ if st.button("🚀 Calculer les disponibilités (V20)", type="primary", use_cont
                 st.session_state['df_stock_brut'] = df_stock_brut.copy() 
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                # Retour à la liste stricte et sécurisée
+                
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
-                col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
+                # VERSION 21 : Ajout de STOCKPHYSIQUE en toute première position pour forcer Python à le prendre !
+                col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
+                
+                if not col_art_stock or not col_qte_stock:
+                    st.error("❌ Erreur STOCK : Colonnes introuvables.")
+                    st.stop()
                 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
@@ -235,7 +239,7 @@ if st.button("🚀 Calculer les disponibilités (V20)", type="primary", use_cont
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
 
                     df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    # Retour à la liste stricte (Adieu le chasseur élastique qui cassait les dates)
+                    
                     col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
                     col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_temp.columns), None)
                     
@@ -376,7 +380,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V20.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V21.xlsx", type="primary")
 
     with c_btn2:
         if FPDF_OK:
@@ -384,10 +388,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V20
+    # SCANNER GLOBAL V21
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V20")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V21")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
