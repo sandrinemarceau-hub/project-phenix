@@ -40,10 +40,15 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# OUTILS
+# OUTILS ET BARRE LATÉRALE
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
+    st.write("Si l'outil se trompe de colonne pour MGC/RIVA, forcez-les ici :")
+    force_art = st.text_input("Forcer colonne Article (ex: CODE)")
+    force_qte = st.text_input("Forcer colonne Quantité (ex: RESTE A FAIRE)")
+    
+    st.divider()
     if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
@@ -257,9 +262,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V29")
-st.title("📦 Portail de Disponibilité - VERSION 29 🔴")
-st.write("Correction de priorité : Ciblage du 'Reste à faire' avant les 'Entrées'.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V30")
+st.title("📦 Portail de Disponibilité - VERSION 30 🔴")
+st.write("Correction du bug des 'Ruptures Partielles' et ajout du Forçage manuel des colonnes MGC/RIVA.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,7 +293,7 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V29)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V30)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse et extraction en cours...'):
             try:
@@ -378,7 +383,7 @@ if st.button("🚀 Calculer les disponibilités (V29)", type="primary", use_cont
                 df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
-                # --- C. LECTURE PRODUCTION (INVERSION DES PRIORITÉS EN V29) ---
+                # --- C. LECTURE PRODUCTION ---
                 liste_prod = []
                 df_prod_brut_total = pd.DataFrame() 
 
@@ -391,10 +396,16 @@ if st.button("🚀 Calculer les disponibilités (V29)", type="primary", use_cont
                     colonnes_temp = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     df_temp.columns = colonnes_temp
                     
-                    # V29 : L'Article final en priorité absolue avant l'Article d'Entrée
                     liste_articles_prod = ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
-                    # V29 : Le Reste A Faire en priorité absolue avant les Entrées
                     liste_qtes_prod = ['RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QUANTITE', 'QTE', 'QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QTEFABRIQUEE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL']
+                    
+                    # Forçage Manuel depuis la barre latérale
+                    if force_art:
+                        art_force_clean = nettoyage_extreme(pd.Series([force_art]))[0]
+                        liste_articles_prod.insert(0, art_force_clean)
+                    if force_qte:
+                        qte_force_clean = nettoyage_extreme(pd.Series([force_qte]))[0]
+                        liste_qtes_prod.insert(0, qte_force_clean)
                     
                     col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
                     col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
@@ -514,9 +525,14 @@ if st.button("🚀 Calculer les disponibilités (V29)", type="primary", use_cont
                         qte_prise_prod += qp2
                         if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
 
+                    # V30 : CORRECTION DE LA RUPTURE PARTIELLE !
                     if qte_restante > 0:
-                        statut = "Rupture"
-                        date_dispo = "Pas de date"
+                        if len(dates_trouvees) > 0:
+                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"
+                            statut = "Attente Prod (Partiel)"
+                        else:
+                            date_dispo = "Pas de date"
+                            statut = "Rupture"
                     else:
                         if len(dates_trouvees) == 0:
                             date_dispo = "Immédiate"
@@ -561,7 +577,7 @@ if st.session_state['calcul_ok']:
         st.write("Voici comment Python a interprété vos fichiers de Production :")
         for log in st.session_state.get('log_diagnostic', []):
             st.write(log)
-        st.write("*Ordre de priorité V29 : ARTICLE avant ENTREE / RESTE A FAIRE avant ENTREE.*")
+        st.write("*Ordre de priorité : Colonne forcée (barre latérale) > ARTICLE > ENTREE.*")
 
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
@@ -571,7 +587,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V29.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V30.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -579,10 +595,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V29
+    # SCANNER GLOBAL V30
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V29")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V30")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
