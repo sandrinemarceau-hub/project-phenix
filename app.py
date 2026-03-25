@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V37")
-st.title("📦 Portail de Disponibilité - VERSION 37 🔴")
-st.write("Le Radar Omni-Search : Aspiration totale de toutes les colonnes de l'usine.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V38")
+st.title("📦 Portail de Disponibilité - VERSION 38 🔴")
+st.write("Mode Tolérance Absolue : Omni-Search sans limite de quantité ou de format.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,13 +288,11 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V38)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse et balayage Omni-Search en cours...'):
+        with st.spinner('Analyse et extraction en Tolérance Absolue...'):
             try:
                 log_diagnostic = []
-                
-                # --- A. LECTURE NOMENCLATURES MULTIPLES ---
                 dict_prepa = {}
                 dict_details = {}
                 df_nom_scanner = pd.DataFrame()
@@ -324,16 +322,10 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                             for _, r in df_nom_brut.iterrows():
                                 art_id = str(r['CLEAN_ART'])
                                 prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
-                                
                                 if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]:
                                     dict_prepa[art_id] = prepa_id
-                                
                                 if art_id not in dict_details:
-                                    dict_details[art_id] = {
-                                        'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '',
-                                        'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0
-                                    }
-                                
+                                    dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
                                 if c_lib:
                                     val = clean_nan(r[c_lib]); 
                                     if val and val != "NAN": dict_details[art_id]['libelle'] = val
@@ -343,12 +335,6 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                                 if c_degres:
                                     val = clean_nan(r[c_degres]); 
                                     if val and val != "NAN": dict_details[art_id]['degres'] = val
-                                if c_couleur:
-                                    val = clean_nan(r[c_couleur]); 
-                                    if val and val != "NAN": dict_details[art_id]['couleur'] = val
-                                if c_uc:
-                                    val = float(nettoyage_quantite(pd.Series([r[c_uc]]))[0]); 
-                                    if val > 0: dict_details[art_id]['uc'] = val
                                 if c_poids:
                                     val = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]); 
                                     if val > 0: dict_details[art_id]['poids'] = val
@@ -358,7 +344,7 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                                 if c_cas_pal:
                                     val = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]); 
                                     if val > 0: dict_details[art_id]['cas_pal'] = val
-                
+
                 st.session_state['dict_details'] = dict_details
                 st.session_state['dict_prepa'] = dict_prepa  
                 st.session_state['df_nom_brut'] = df_nom_scanner
@@ -366,21 +352,15 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                 # --- B. LECTURE STOCK ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 st.session_state['df_stock_brut'] = df_stock_brut.copy() 
-                
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                 col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
-                
-                if not col_art_stock or not col_qte_stock:
-                    st.error("❌ Erreur STOCK : Colonnes introuvables.")
-                    st.stop()
-                
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
                 df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
-                # --- C. LECTURE PRODUCTION (OMNI-SEARCH V37) ---
+                # --- C. LECTURE PRODUCTION (OMNI-SEARCH V38 TOLÉRANCE ABSOLUE) ---
                 liste_prod = []
                 df_prod_brut_total = pd.DataFrame() 
 
@@ -389,44 +369,38 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                     df_temp_copy = df_temp.copy()
                     df_temp_copy['SOURCE'] = f.name
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
-
                     colonnes_temp = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     df_temp.columns = colonnes_temp
                     
-                    # Détection de TOUTES les colonnes utiles dans le fichier (Omni-Search)
-                    arts_cols = [c for c in colonnes_temp if any(k in c for k in ['ART', 'CODE', 'REF', 'PRODUIT'])]
-                    qtes_cols = [c for c in colonnes_temp if any(k in c for k in ['QTE', 'QUANT', 'RESTE', 'AFAIRE'])]
-                    dates_cols = [c for c in colonnes_temp if any(k in c for k in ['DATE', 'ECH', 'FIN', 'LIV', 'DISPO', 'BESOIN', 'PLANIF', 'REALISATION'])]
+                    # On exclut strictement les dates et quantités des colonnes articles pour éviter la confusion
+                    arts_cols = [c for c in colonnes_temp if any(k in c for k in ['ART', 'CODE', 'REF', 'PRODUIT', 'COMPOSANT']) and not any(k in c for k in ['QTE', 'QUANT', 'DATE', 'ECH'])]
+                    qtes_cols = [c for c in colonnes_temp if any(k in c for k in ['QTE', 'QUANT', 'RESTE', 'AFAIRE', 'BESOIN', 'LANCE', 'PREVU', 'PROD', 'ORDRE']) and not any(k in c for k in ['ART', 'CODE', 'DATE', 'ECH', 'REF'])]
+                    dates_cols = [c for c in colonnes_temp if any(k in c for k in ['DATE', 'ECH', 'FIN', 'LIV', 'DISPO', 'BESOIN', 'PLANIF', 'REALISATION', 'PREVU', 'CREA', 'DELAI']) and not any(k in c for k in ['QTE', 'QUANT', 'ART', 'CODE'])]
 
-                    if not arts_cols or not qtes_cols:
-                        log_diagnostic.append(f"❌ **{f.name}** : Ignoré (Impossible de trouver des colonnes d'Articles ou de Quantités. Colonnes vues : {colonnes_temp.tolist()})")
+                    if not arts_cols:
                         continue
 
-                    # Nettoyage global de toutes les colonnes détectées
-                    for c in arts_cols:
-                        df_temp[c] = nettoyage_extreme(df_temp[c])
-                    for c in qtes_cols:
-                        df_temp[c] = nettoyage_quantite(df_temp[c])
+                    for c in arts_cols: df_temp[c] = nettoyage_extreme(df_temp[c])
+                    for c in qtes_cols: df_temp[c] = nettoyage_quantite(df_temp[c])
 
-                    # Récupération de la première date valide sur chaque ligne
                     df_temp['OMNI_DATE'] = pd.NaT
                     for c in dates_cols:
                         s_test = pd.to_datetime(df_temp[c], dayfirst=True, errors='coerce')
                         df_temp['OMNI_DATE'] = df_temp['OMNI_DATE'].fillna(s_test)
 
-                    # Récupération de la quantité MAXIMALE trouvée sur la ligne
-                    if qtes_cols:
-                        df_temp['OMNI_QTE'] = df_temp[qtes_cols].max(axis=1)
-                    else:
-                        df_temp['OMNI_QTE'] = 0
+                    if qtes_cols: df_temp['OMNI_QTE'] = df_temp[qtes_cols].max(axis=1)
+                    else: df_temp['OMNI_QTE'] = 0
 
                     rows_added = 0
                     for idx, row in df_temp.iterrows():
                         qte = row.get('OMNI_QTE', 0)
                         d = row.get('OMNI_DATE')
                         
-                        if qte > 0 and pd.notna(d):
-                            # Pour chaque code article trouvé sur cette ligne (Entrée ou Sortie), on l'enregistre avec cette date !
+                        # Tolérance Absolue : Si on trouve une date mais que la quantité est 0, on force 99999 pour sauver la date !
+                        if pd.notna(d):
+                            if qte <= 0: 
+                                qte = 99999
+                            
                             for c in arts_cols:
                                 code = str(row[c])
                                 if code and code not in ["0", "NAN", "NONE"]:
@@ -438,30 +412,26 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                                     })
                                     rows_added += 1
 
-                    log_diagnostic.append(f"✅ **{f.name}** : Mode Omni-Search activé. {rows_added} connexions Article/Date fusionnées !")
+                    log_diagnostic.append(f"✅ **{f.name}** : {rows_added} lignes sauvées avec le Mode Tolérance Absolue.")
                 
                 st.session_state['log_diagnostic'] = log_diagnostic
                 st.session_state['df_prod_brut'] = df_prod_brut_total 
-                
                 if liste_prod:
                     df_production = pd.DataFrame(liste_prod)
                     df_production['Date_Dispo_Reelle'] = df_production['DATE_PROD'] + timedelta(days=2)
                     df_production = df_production.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
                     productions_futures = df_production.to_dict('records')
-                else:
-                    productions_futures = []
+                else: productions_futures = []
 
                 # --- D. LECTURE COMMANDES ---
                 df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd)
                 colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 df_commandes_brut.columns = colonnes_cmd
-                
                 col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
                 col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
                 col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None)
                 col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
                 col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None)
-                
                 col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
                 col_ville = next((c for c in colonnes_cmd if 'VILLE' in c or 'CITY' in c), None)
                 col_pays = next((c for c in colonnes_cmd if 'PAYS' in c or 'COUNTRY' in c), None)
@@ -473,188 +443,120 @@ if st.button("🚀 Calculer les disponibilités (V37)", type="primary", use_cont
                 df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
                 df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
                 df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
-                
                 df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
                 df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
                 df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
                 df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
-                
-                df_commandes['URGENCE'] = 0
-                df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
-                df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
+                df_commandes = df_commandes.dropna(subset=['DATE_CDE']).sort_values(by=['DATE_CDE'])
 
                 # --- E. ALGORITHME AVEC CHAÎNAGE EN CASCADE ---
                 def get_cascade_prepas(art_code):
-                    cascade = []
-                    courant = dict_prepa.get(art_code)
+                    cascade = []; courant = dict_prepa.get(art_code)
                     for _ in range(5):
-                        if courant and courant not in cascade:
-                            cascade.append(courant)
-                            courant = dict_prepa.get(courant)
-                        else:
-                            break
+                        if courant and courant not in cascade: cascade.append(courant); courant = dict_prepa.get(courant)
+                        else: break
                     return cascade
 
                 resultats = []
                 for index, commande in df_commandes.iterrows():
-                    article = commande['ARTICLE_CODE']
-                    qte_restante = commande['QUANTITE']
-                    
-                    qte_prise_stock = 0
-                    qte_prise_prod = 0
-                    dates_trouvees = []
+                    article = commande['ARTICLE_CODE']; qte_restante = commande['QUANTITE']
+                    qte_prise_stock = 0; qte_prise_prod = 0; dates_trouvees = []
                     
                     def consommer(code_a_chercher, qte_a_trouver):
                         q_stk, q_prd = 0, 0
                         s = stock_actuel.get(code_a_chercher, 0)
                         if s > 0:
-                            prise = min(s, qte_a_trouver)
-                            stock_actuel[code_a_chercher] -= prise
-                            q_stk += prise
-                            qte_a_trouver -= prise
+                            prise = min(s, qte_a_trouver); stock_actuel[code_a_chercher] -= prise
+                            q_stk += prise; qte_a_trouver -= prise
                             
                         if qte_a_trouver > 0:
                             for prod in productions_futures:
-                                if prod['ARTICLE'] == code_a_chercher and prod['QTE_PRODUITE'] > 0:
-                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver)
-                                    prod['QTE_PRODUITE'] -= prise
-                                    q_prd += prise
-                                    qte_a_trouver -= prise
-                                    dates_trouvees.append(prod['Date_Dispo_Reelle'])
+                                # Tolérance Absolue : On accepte si le code est inclus dans l'article de prod (ex: 48753 dans 48753BTL)
+                                match = False
+                                if prod['ARTICLE'] == code_a_chercher: match = True
+                                elif str(prod['ARTICLE']).startswith(code_a_chercher): match = True
+                                elif code_a_chercher in str(prod['ARTICLE']): match = True
+
+                                if match and prod['QTE_PRODUITE'] > 0:
+                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver); prod['QTE_PRODUITE'] -= prise
+                                    q_prd += prise; qte_a_trouver -= prise; dates_trouvees.append(prod['Date_Dispo_Reelle'])
                                     if qte_a_trouver == 0: break
                         return q_stk, q_prd, qte_a_trouver
 
                     qs1, qp1, qte_restante = consommer(article, qte_restante)
-                    qte_prise_stock += qs1
-                    qte_prise_prod += qp1
-                    
+                    qte_prise_stock += qs1; qte_prise_prod += qp1
                     utilise_prepa = "Non"
-                    
                     if qte_restante > 0:
                         cascade = get_cascade_prepas(article)
                         for prepa in cascade:
                             if qte_restante <= 0: break
                             qs2, qp2, qte_restante = consommer(prepa, qte_restante)
-                            qte_prise_stock += qs2
-                            qte_prise_prod += qp2
-                            if (qs2 + qp2) > 0: 
-                                utilise_prepa = f"Oui ({prepa})"
+                            qte_prise_stock += qs2; qte_prise_prod += qp2
+                            if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
 
                     if qte_restante > 0:
-                        if len(dates_trouvees) > 0:
-                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"
-                            statut = "Attente Prod (Partiel)"
-                        else:
-                            date_dispo = "Pas de date"
-                            statut = "Rupture"
+                        if dates_trouvees: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"; statut = "Attente Prod (Partiel)"
+                        else: date_dispo = "Pas de date"; statut = "Rupture"
                     else:
-                        if len(dates_trouvees) == 0:
-                            date_dispo = "Immédiate"
-                            statut = "En Stock"
-                        else:
-                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y')
-                            statut = "Attente Prod"
+                        if not dates_trouvees: date_dispo = "Immédiate"; statut = "En Stock"
+                        else: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y'); statut = "Attente Prod"
                         
                     resultats.append({
-                        'Num_Commande': commande['NUM_CDE'],
-                        'Client': commande['CLIENT'],
-                        'Adresse': commande['ADRESSE'],
-                        'Ville': commande['VILLE'],
-                        'Pays': commande['PAYS'],
-                        'Exportateur': commande['EXPORTATEUR'],
-                        'Article': article,
-                        'Qte_Demandée': int(commande['QUANTITE']),
-                        'Tiré_Stock': int(qte_prise_stock),
-                        'Tiré_Prod': int(qte_prise_prod),
-                        'Remplacement_Prepa': utilise_prepa,
-                        'Manquant': int(qte_restante),
-                        'Statut': statut,
-                        'Date_Disponibilité': date_dispo
+                        'Num_Commande': commande['NUM_CDE'], 'Client': commande['CLIENT'], 'Article': article,
+                        'Qte_Demandée': int(commande['QUANTITE']), 'Tiré_Stock': int(qte_prise_stock), 'Tiré_Prod': int(qte_prise_prod),
+                        'Remplacement_Prepa': utilise_prepa, 'Manquant': int(qte_restante), 'Statut': statut, 'Date_Disponibilité': date_dispo,
+                        'Adresse': commande['ADRESSE'], 'Ville': commande['VILLE'], 'Pays': commande['PAYS'], 'Exportateur': commande['EXPORTATEUR']
                     })
 
                 st.session_state['df_final'] = pd.DataFrame(resultats)
                 st.session_state['calcul_ok'] = True
-
             except Exception as e:
-                st.error(f"Une erreur s'est produite. Détails : {e}")
-                st.session_state['calcul_ok'] = False
-    else:
-        st.warning("Veuillez déposer Stock, Prod, Commandes et Nomenclatures.")
+                st.error(f"Erreur : {e}"); st.session_state['calcul_ok'] = False
+    else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# 4. AFFICHAGE ET EXPORT PDF
+# 4. AFFICHAGE ET EXPORT
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
-    
-    with st.expander("🛠️ Mode Diagnostic Ultime"):
-        st.write("Résultats du Balayage Omni-Search :")
-        for log in st.session_state.get('log_diagnostic', []):
-            st.write(log)
-
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
+    
+    with st.expander("🛠️ Mode Diagnostic Ultime"):
+        for log in st.session_state.get('log_diagnostic', []):
+            st.write(log)
 
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
         buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V37.xlsx", type="primary")
-
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V38.xlsx", type="primary")
     with c_btn2:
-        if REPORTLAB_OK:
-            zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
-            st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
+        zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
+        st.download_button("📦 Télécharger les PDFs", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
-    # ==========================================
-    # SCANNER GLOBAL V37
-    # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V37")
-    st.write("Tapez un code article pour voir tous ses composants de préparation !")
-    recherche = st.text_input("Tapez votre numéro (ex: 85633, 48755) et appuyez sur Entrée :")
-    
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V38")
+    recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
-        
         if 'dict_prepa' in st.session_state:
             dict_p = st.session_state['dict_prepa']
-            arbre = [rech_clean]
-            courant = dict_p.get(rech_clean)
+            arbre = [rech_clean]; courant = dict_p.get(rech_clean)
             for _ in range(5):
-                if courant and courant not in arbre:
-                    arbre.append(courant)
-                    courant = dict_p.get(courant)
-                else:
-                    break
-            
-            if len(arbre) > 1:
-                st.info(f"🧬 **Arbre de préparation de Python pour {rech_clean} :** " + " ➔ ".join(arbre))
-                st.write(f"*S'il y a une date dans vos usines pour l'un de ces {len(arbre)} articles, Python l'attribuera !*")
-            else:
-                st.warning(f"⚠️ **Aucune préparation trouvée pour {rech_clean}**. L'Arbre Généalogique s'arrête ici.")
-        
+                if courant and courant not in arbre: arbre.append(courant); courant = dict_p.get(courant)
+                else: break
+            if len(arbre) > 1: st.info(f"🧬 **Arbre :** " + " ➔ ".join(arbre))
+            else: st.warning(f"⚠️ Aucune préparation pour {rech_clean}.")
         col_s1, col_s2, col_s3 = st.columns(3)
-        
         def display_scan(df_name, title, col):
             if df_name in st.session_state:
                 df = st.session_state[df_name]
-                def match_cell(val):
-                    val_c = re.sub(r'[^A-Z0-9]', '', str(val).upper().replace('.0', '')).lstrip('0')
-                    return rech_clean in val_c if rech_clean else False
-                
-                mask = df.applymap(match_cell)
+                mask = df.astype(str).apply(lambda x: x.str.contains(rech_clean, case=False, na=False))
                 res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
-                col.write(f"**{title} : {len(res)} ligne(s)**")
-                if not res.empty:
-                    for c in res.columns:
-                        if pd.api.types.is_datetime64_any_dtype(res[c]):
-                            res[c] = res[c].dt.strftime('%d/%m/%Y')
-                    col.dataframe(res, use_container_width=True)
-                else:
-                    col.info("Introuvable.")
-
+                col.write(f"**{title}**")
+                if not res.empty: col.dataframe(res, use_container_width=True)
+                else: col.info("Introuvable.")
         display_scan('df_stock_brut', '📦 STOCK', col_s1)
         display_scan('df_prod_brut', '🏭 PRODUCTION', col_s2)
         display_scan('df_nom_brut', '🧠 NOMENCLATURE', col_s3)
