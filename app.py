@@ -50,7 +50,7 @@ if not check_password():
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
-    st.info("🧠 Version 44 : Code PDF ultra-sécurisé anti-crash !")
+    st.info("🧠 Version 45 : Alignement parfait du tableau RDV")
     if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
@@ -264,19 +264,17 @@ def generer_packing_lists_zip(df_resultats, dict_details):
     return zip_buffer.getvalue()
 
 # ==========================================
-# GÉNÉRATEURS DE PDF (RDV DOCUMENT - ANTI CRASH)
+# GÉNÉRATEURS DE PDF (RDV DOCUMENT)
 # ==========================================
 if FPDF_OK:
     class RDVPDF(FPDF):
         def header(self):
             self.ln(35)
             self.set_font("Helvetica", "B", 24)
-            # Paramètres 100% positionnels anti-crash (Largeur, Hauteur, Texte, Bordure, LigneSuivante, Alignement)
             self.cell(0, 15, 'RDV DOCUMENT', 0, 1, 'C')
             self.ln(2)
 
         def get_lines_count(self, w, line_height, text):
-            # Méthode "incassable" pour calculer la hauteur nécessaire selon la version de FPDF2
             try:
                 return len(self.multi_cell(w, line_height, text, split_only=True))
             except TypeError:
@@ -299,7 +297,9 @@ if FPDF_OK:
             lines_value = self.get_lines_count(w_value, line_height, value)
 
             total_h = max(max(lines_label, lines_value) * line_height + 4, 12)
-            x_curr, y_curr = self.get_x(), self.get_y()
+            
+            # CORRECTION V45 : On force x_curr à être strictement égal à marge_x (15) pour aligner tout le tableau
+            x_curr, y_curr = marge_x, self.get_y()
 
             self.set_xy(x_curr, y_curr)
             self.cell(w_label, total_h, "", border=1)
@@ -377,11 +377,10 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
                 largeur_totale = pdf.get_string_width(txt_noir) + pdf.get_string_width(txt_rouge)
                 pdf.set_x((pdf.w - largeur_totale) / 2)
                 
-                # Appels modifiés pour éviter le bug des keyword arguments
                 pdf.set_text_color(0, 0, 0)
                 pdf.cell(pdf.get_string_width(txt_noir), 10, txt_noir)
                 pdf.set_text_color(200, 0, 0)
-                pdf.cell(pdf.get_string_width(txt_rouge), 10, txt_rouge, 0, 1) # 0 = pas de bordure, 1 = ligne suivante
+                pdf.cell(pdf.get_string_width(txt_rouge), 10, txt_rouge, 0, 1) 
                 
                 pdf.set_text_color(0, 0, 0)
                 pdf.ln(10)
@@ -414,9 +413,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
 # ==========================================
 # INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V44")
-st.title("📦 Portail de Disponibilité - VERSION 44 🔴")
-st.write("Correction de la ponctuation et Génération Multi-PDFs : Packing Lists et RDV Documents.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V45")
+st.title("📦 Portail de Disponibilité - VERSION 45 🔴")
+st.write("Alignement parfait du tableau RDV et Génération Multi-PDFs.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
@@ -426,7 +425,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V44)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V45)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
@@ -685,7 +684,7 @@ if st.session_state['calcul_ok']:
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V44.xlsx", type="primary", use_container_width=True)
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V45.xlsx", type="primary", use_container_width=True)
     with c_btn2:
         if REPORTLAB_OK:
             zip_pack = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
@@ -698,7 +697,7 @@ if st.session_state['calcul_ok']:
             st.warning("Générateur RDV inactif (FPDF non installé).")
 
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V44")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V45")
     recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
