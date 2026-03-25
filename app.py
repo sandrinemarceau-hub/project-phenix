@@ -4,12 +4,17 @@ from datetime import timedelta
 import io
 import zipfile
 import re
+import math
 
 try:
-    from fpdf import FPDF
-    FPDF_OK = True
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    REPORTLAB_OK = True
 except ImportError:
-    FPDF_OK = False
+    REPORTLAB_OK = False
 
 # ==========================================
 # 1. SYSTÈME DE SÉCURITÉ
@@ -73,8 +78,9 @@ def nettoyage_quantite(serie):
             return 0.0
     return serie.apply(clean_val)
 
-def clean_text_pdf(t):
-    return str(t).encode('latin-1', 'replace').decode('latin-1')
+def safe_xml(texte):
+    # ReportLab utilise du XML pour les paragraphes, il faut protéger certains symboles
+    return str(texte).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 def lire_fichier(fichier, lignes_a_ignorer):
     nom = fichier.name.lower()
@@ -88,6 +94,7 @@ def lire_fichier(fichier, lignes_a_ignorer):
     else:
         return pd.read_excel(fichier, skiprows=lignes_a_ignorer)
 
+# --- GÉNÉRATEUR PACKING LISTS REPORTLAB ---
 def generer_packing_lists_zip(df_resultats, dict_details):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
@@ -97,54 +104,117 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             lignes = df_resultats[df_resultats['Num_Commande'] == cmd]
             client = str(lignes.iloc[0]['Client'])
             
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, txt=f"PACKING LIST - COMMANDE: {clean_text_pdf(cmd)}", ln=True, align='C')
-            pdf.set_font("Arial", "", 12)
-            pdf.cell(0, 10, txt=f"Client: {clean_text_pdf(client)}", ln=True, align='C')
-            pdf.ln(10)
+            pdf_buffer = io.BytesIO()
+            doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, margin=1.2*cm)
+            elements = []
+            styles = getSampleStyleSheet()
+
+            # --- STYLE ---
+            style_header = ParagraphStyle('H', parent=styles['Normal'], fontSize=9, leading=11)
+            style_title = ParagraphStyle('T', parent=styles['Title'], fontSize=22, alignment=2) # 2 = Aligné à droite
+
+            # --- EN-TÊTE ---
+            elements.append(Paragraph("PACKING LIST", style_title))
+            elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.black, spaceAfter=15))
+
+            # --- BLOC ADRESSES ---
+            txt_exp = "<b>EXPORTER:</b><br/>LUC BELAIRE INTERNATIONAL, LTD<br/>DUBLIN, IRELAND"
+            txt_con = f"<b>CONSIGNEE:</b><br/>{safe_xml(client)}"
+
+            t_adr = Table([[Paragraph(txt_exp, style_header), "", Paragraph(txt_con, style_header)]], colWidths=[8.5*cm, 1.5*cm, 8.5*cm])
+            t_adr.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'), ('BOTTOMPADDING',(0,0),(-1,-1), 15)]))
+            elements.append(t_adr)
+
+            # --- TABLEAU ARTICLES ---
+            headers = ['SKU / REF', 'CASES (COLIS)', 'UNIT QTY', 'DESCRIPTION']
+            data = [headers]
             
-            pdf.set_font("Arial", "B", 9)
-            pdf.cell(25, 8, "Code", 1)
-            pdf.cell(85, 8, "Description", 1)
-            pdf.cell(30, 8, "Format", 1)
-            pdf.cell(25, 8, "Bouteilles", 1, align='C')
-            pdf.cell(25, 8, "Cartons", 1, align='C')
-            pdf.ln()
-            
-            pdf.set_font("Arial", "", 8)
+            t_q = 0     # Total bouteilles
+            t_c = 0     # Total cartons
+            t_p = 0.0   # Total poids
+            t_pal = 0.0 # Total palettes
+            type_pal_label = "N/A"
+
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
-                qte = row['Qte_Demandée']
-                details = dict_details.get(art, {'libelle': 'Inconnu', 'format': '', 'uc': 6})
+                qte = int(row['Qte_Demandée'])
                 
-                libelle = details['libelle'][:45]
-                fmt = details['format'][:15]
-                uc = details['uc']
-                if pd.isna(uc) or uc <= 0: uc = 6
+                # Récupération des infos depuis la Nomenclature
+                details = dict_details.get(art, {'libelle': 'Inconnu', 'uc': 6.0, 'poids': 1.5, 'type_pal': 'N/A', 'cas_pal': 100.0})
+                
+                uc = details['uc'] if details['uc'] > 0 else 6.0
                 cartons = int(qte / uc) if qte > 0 else 0
                 
-                pdf.cell(25, 8, clean_text_pdf(art), 1)
-                pdf.cell(85, 8, clean_text_pdf(libelle), 1)
-                pdf.cell(30, 8, clean_text_pdf(fmt), 1)
-                pdf.cell(25, 8, str(int(qte)), 1, align='C')
-                pdf.cell(25, 8, str(cartons), 1, align='C')
-                pdf.ln()
+                poids_ligne = qte * details['poids']
+                cas_pal = details['cas_pal'] if details['cas_pal'] > 0 else 100.0
+                palettes_ligne = cartons / cas_pal if cartons > 0 else 0
                 
+                if details['type_pal'] != "N/A" and details['type_pal'] != "" and details['type_pal'] != "NAN":
+                    type_pal_label = details['type_pal']
+                
+                t_q += qte
+                t_c += cartons
+                t_p += poids_ligne
+                t_pal += palettes_ligne
+                
+                desc = safe_xml(details['libelle'][:45])
+                
+                data.append([
+                    safe_xml(art),
+                    str(cartons),
+                    str(int(qte)),
+                    Paragraph(desc, style_header)
+                ])
+
+            t_art = Table(data, colWidths=[3*cm, 3*cm, 3*cm, 9.5*cm], repeatRows=1)
+            t_art.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.black),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+                ('ALIGN', (0,0), (2,-1), 'CENTER'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
+                ('FONTSIZE', (0,0), (-1,-1), 8.5),
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ]))
+            elements.append(t_art)
+
+            # --- RÉCAPITULATIF & TOTAUX ---
+            elements.append(Spacer(1, 20))
+            t_pal_int = int(math.ceil(t_pal)) # Arrondi supérieur pour les palettes
+            
+            tot_data = [
+                [f"TOTAL UNITS: {int(t_q)}", f"TOTAL WEIGHT: {t_p:.2f} kg"],
+                [f"TOTAL CASES: {int(t_c)}", f"TOTAL PALLETS: {t_pal_int} ({type_pal_label})"],
+            ]
+            t_tot = Table(tot_data, colWidths=[9*cm, 9.5*cm])
+            t_tot.setStyle(TableStyle([
+                ('FONTNAME',(0,0),(-1,-1),'Helvetica-Bold'),
+                ('FONTSIZE',(0,0),(-1,-1),10),
+                ('BOX',(0,0),(-1,-1),1.5,colors.black),
+                ('LEFTPADDING',(0,0),(-1,-1), 10),
+                ('TOPPADDING',(0,0),(-1,-1), 10),
+                ('BOTTOMPADDING',(0,0),(-1,-1), 10),
+            ]))
+            elements.append(t_tot)
+
+            # --- SIGNATURE ---
+            elements.append(Spacer(1, 40))
+            elements.append(Paragraph("________________________________<br/>Authorized Signature & Stamp", styles['Normal']))
+
+            doc.build(elements)
+            
             safe_name = str(cmd).replace('/', '_').replace('\\', '_')
-            out = pdf.output(dest='S')
-            pdf_bytes = out.encode('latin1') if isinstance(out, str) else out
-            zip_file.writestr(f"Packing_List_{safe_name}.pdf", pdf_bytes)
+            zip_file.writestr(f"Packing_List_{safe_name}.pdf", pdf_buffer.getvalue())
             
     return zip_buffer.getvalue()
 
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V21")
-st.title("📦 Portail de Disponibilité - VERSION 21 🔴")
-st.write("Intégration de la colonne 'STOCK PHYSIQUE' en priorité absolue.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V22")
+st.title("📦 Portail de Disponibilité - VERSION 22 🔴")
+st.write("Moteur PDF ReportLab activé (Visuel Professionnel & Calcul de Palettes).")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -173,11 +243,11 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V21)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V22)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Calcul et chaînage final en cours...'):
+        with st.spinner('Calcul et génération PDF pro en cours...'):
             try:
-                # --- A. LECTURE NOMENCLATURE ---
+                # --- A. LECTURE NOMENCLATURE (Extraction Poids/Palettes ajoutée) ---
                 dict_prepa = {}
                 dict_details = {}
                 if fichier_nom:
@@ -185,11 +255,17 @@ if st.button("🚀 Calculer les disponibilités (V21)", type="primary", use_cont
                     st.session_state['df_nom_brut'] = df_nom_brut.copy() 
                     
                     df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                    
                     c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
                     c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE'] if c in df_nom_brut.columns), None)
                     c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE'] if c in df_nom_brut.columns), None)
                     c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
                     c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
+                    
+                    # Nouveaux champs pour PDF
+                    c_poids = next((c for c in ['POIDSBTLLES', 'POIDS', 'WEIGHT'] if c in df_nom_brut.columns), None)
+                    c_pal_type = next((c for c in ['PALETTE', 'TYPEPALETTE'] if c in df_nom_brut.columns), None)
+                    c_cas_pal = next((c for c in ['UAUEMAX', 'PAL', 'CASESPERPALLET'] if c in df_nom_brut.columns), None)
                     
                     if c_art:
                         df_nom_brut['CLEAN_ART'] = nettoyage_extreme(df_nom_brut[c_art])
@@ -205,7 +281,10 @@ if st.button("🚀 Calculer les disponibilités (V21)", type="primary", use_cont
                             dict_details[art_id] = {
                                 'libelle': str(r[c_lib]) if c_lib else "Inconnu",
                                 'format': str(r[c_fmt]) if c_fmt else "",
-                                'uc': float(nettoyage_quantite(pd.Series([r[c_uc]]))[0]) if c_uc else 6.0
+                                'uc': float(nettoyage_quantite(pd.Series([r[c_uc]]))[0]) if c_uc else 6.0,
+                                'poids': float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]) if c_poids else 1.5,
+                                'type_pal': str(r[c_pal_type]) if c_pal_type else "N/A",
+                                'cas_pal': float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]) if c_cas_pal else 100.0
                             }
                 st.session_state['dict_details'] = dict_details
 
@@ -216,7 +295,6 @@ if st.button("🚀 Calculer les disponibilités (V21)", type="primary", use_cont
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
-                # VERSION 21 : Ajout de STOCKPHYSIQUE en toute première position pour forcer Python à le prendre !
                 col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
                 
                 if not col_art_stock or not col_qte_stock:
@@ -380,18 +458,20 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V21.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V22.xlsx", type="primary")
 
     with c_btn2:
-        if FPDF_OK:
+        if REPORTLAB_OK:
             zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
+        else:
+            st.warning("⚠️ Module 'reportlab' introuvable. Remplacez 'fpdf' par 'reportlab' dans requirements.txt.")
 
     # ==========================================
-    # SCANNER GLOBAL V21
+    # SCANNER GLOBAL V22
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V21")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V22")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
