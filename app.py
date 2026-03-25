@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V27")
-st.title("📦 Portail de Disponibilité - VERSION 27 🔴")
-st.write("Mode 'Cerveau Fusionné' : Déposez plusieurs fichiers Nomenclatures en même temps !")
+st.set_page_config(layout="wide", page_title="Portail Logistique V28")
+st.title("📦 Portail de Disponibilité - VERSION 28 🔴")
+st.write("Radar à dates MGC/RIVA et Mode Diagnostic activés.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -279,7 +279,6 @@ with col3:
     skip_cmd = st.number_input("Ignorer (Cmd)", min_value=0, value=0)
 
 with col4:
-    # NOUVEAU : Accept Multiple Files pour la nomenclature !
     st.subheader("4. Nomenclatures")
     fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xlsx', 'xls', 'csv'], accept_multiple_files=True)
     skip_nom = st.number_input("Ignorer (Nom.)", min_value=0, value=0)
@@ -289,24 +288,22 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V28)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse et fusion des nomenclatures en cours...'):
+        with st.spinner('Analyse et extraction en cours...'):
             try:
+                # Stockage des diagnostics
+                log_diagnostic = []
+                
                 # --- A. LECTURE NOMENCLATURES MULTIPLES ---
                 dict_prepa = {}
                 dict_details = {}
-                
-                # Le Scanner a besoin d'une vue d'ensemble : on va concaténer les nomenclatures lues
                 df_nom_scanner = pd.DataFrame()
 
                 if fichiers_nom:
                     for f_nom in fichiers_nom:
                         df_nom_brut = lire_fichier(f_nom, skip_nom)
-                        
-                        # Ajout au Scanner
                         df_nom_scanner = pd.concat([df_nom_scanner, df_nom_brut.copy()], ignore_index=True)
-                        
                         df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                         
                         c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
@@ -328,18 +325,15 @@ if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_cont
                                 art_id = str(r['CLEAN_ART'])
                                 prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
                                 
-                                # Ajout du lien de parenté
                                 if prepa_id and prepa_id not in ["0", "NAN", art_id]:
                                     dict_prepa[art_id] = prepa_id
                                 
-                                # Initialisation sécurisée
                                 if art_id not in dict_details:
                                     dict_details[art_id] = {
                                         'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '',
                                         'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0
                                     }
                                 
-                                # Mise à jour conditionnelle (on écrase si la donnée est valide)
                                 if c_lib:
                                     val = clean_nan(r[c_lib])
                                     if val and val != "NAN": dict_details[art_id]['libelle'] = val
@@ -399,10 +393,14 @@ if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_cont
                     df_temp.columns = colonnes_temp
                     
                     liste_articles_prod = ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
-                    liste_qtes_prod = ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL', 'QTEPREVUE', 'QUANTITEPREVUE', 'RESTEAFAIRE', 'QTEFABRIQUEE']
+                    liste_qtes_prod = ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL', 'QTEPREVUE', 'QUANTITEPREVUE', 'RESTEAFAIRE', 'QTEFABRIQUEE', 'RESTE', 'AFAIRE']
                     
                     col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
                     col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
+                    
+                    # NOUVEAU : Radar à Dates V28
+                    mots_cles_dates = ['DATE', 'ECHEANCE', 'FIN', 'LIVRAISON', 'DISPO', 'BESOIN', 'REALISATION', 'PLANIF', 'DELAI']
+                    colonnes_dates_potentielles = [c for c in colonnes_temp if any(mot in c for mot in mots_cles_dates)]
                     
                     if col_art_prod and col_qte_prod:
                         df_ext = pd.DataFrame()
@@ -410,23 +408,27 @@ if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_cont
                         df_ext['QTE_PRODUITE'] = nettoyage_quantite(df_temp[col_qte_prod])
                         
                         date_series = None
-                        for col in ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']:
-                            if col in colonnes_temp:
-                                s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
-                                date_series = s_test if date_series is None else date_series.fillna(s_test)
-                                    
-                        if date_series is None or date_series.isna().all():
-                            for col in colonnes_temp:
-                                if 'DATE' in col:
-                                    s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
-                                    date_series = s_test if date_series is None else date_series.fillna(s_test)
+                        col_date_utilisee = "Aucune"
+                        for col in colonnes_dates_potentielles:
+                            s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
+                            if not s_test.isna().all():
+                                if date_series is None:
+                                    date_series = s_test
+                                    col_date_utilisee = col
+                                else:
+                                    date_series = date_series.fillna(s_test)
                                         
                         df_ext['DATE_PROD'] = date_series if date_series is not None else pd.Series(pd.NaT, index=df_temp.index)
                         liste_prod.append(df_ext)
+                        
+                        log_diagnostic.append(f"✅ **{f.name}** : Article = `{col_art_prod}`, Quantité = `{col_qte_prod}`, Date = `{col_date_utilisee}`")
                     else:
-                        st.warning(f"⚠️ Alerte Fichier Ignoré : Le fichier '{f.name}' n'a pas pu être lu. Je ne trouve pas la colonne d'Article ou de Quantité. \n\n 🔍 Voici les colonnes que j'ai trouvées dedans : {colonnes_temp.tolist()}")
+                        log_diagnostic.append(f"❌ **{f.name}** : Ignoré (Article ou Qté introuvable)")
+                        st.warning(f"⚠️ Alerte Fichier Ignoré : Le fichier '{f.name}' n'a pas pu être lu. \n\n 🔍 Voici les colonnes que j'ai trouvées dedans : {colonnes_temp.tolist()}")
                 
+                st.session_state['log_diagnostic'] = log_diagnostic
                 st.session_state['df_prod_brut'] = df_prod_brut_total 
+                
                 if liste_prod:
                     df_production = pd.concat(liste_prod, ignore_index=True)
                     df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
@@ -554,6 +556,14 @@ if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_cont
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
+    
+    # --- NOUVEAU : Le Mode Diagnostic ---
+    with st.expander("🛠️ Mode Diagnostic (Voir ce que Python a lu dans vos usines)"):
+        st.write("Voici comment Python a interprété vos fichiers de Production :")
+        for log in st.session_state.get('log_diagnostic', []):
+            st.write(log)
+        st.write("*Si la date indique 'Aucune', cela signifie que l'outil a dû ignorer la ligne faute de trouver une date ou une quantité positive.*")
+
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
 
@@ -562,7 +572,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V27.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V28.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -570,10 +580,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V27
+    # SCANNER GLOBAL V28
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V27")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V28")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
