@@ -51,6 +51,7 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'\.0$', '', regex=True) 
     s = s.str.upper() 
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
+    # Le destructeur de zéros qui a sauvé l'article 85633 !
     s = s.str.lstrip('0') 
     s = s.replace('', '0') 
     return s
@@ -142,9 +143,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V19")
-st.title("📦 Portail de Disponibilité - VERSION 19 🔴")
-st.write("Le Chasseur de Colonnes Élastique est activé (Recherche étendue des quantités).")
+st.set_page_config(layout="wide", page_title="Portail Logistique V20")
+st.title("📦 Portail de Disponibilité - VERSION 20 🔴")
+st.write("Équilibre parfait : Zéros retirés pour le Stock ET Colonnes strictes pour la Prod.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -173,9 +174,9 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V19)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V20)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Recherche élastique des colonnes en cours...'):
+        with st.spinner('Calcul et chaînage final en cours...'):
             try:
                 # --- A. LECTURE NOMENCLATURE ---
                 dict_prepa = {}
@@ -213,28 +214,14 @@ if st.button("🚀 Calculer les disponibilités (V19)", type="primary", use_cont
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 st.session_state['df_stock_brut'] = df_stock_brut.copy() 
                 
-                colonnes_stock = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                df_stock_brut.columns = colonnes_stock
-                
-                col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in colonnes_stock), None)
-                
-                # V19 : Recherche élastique de la colonne Quantité pour le Stock
-                mots_cles_stock = ['STOCK', 'DISPO', 'QTE', 'QUANTIT', 'TOTAL', 'PHYSIQUE', 'SOLDE', 'RESTE', 'BTL', 'BOUTEILLE']
-                col_qte_stock = next((c for c in colonnes_stock if any(mot in c for mot in mots_cles_stock)), None)
-                
-                if not col_art_stock:
-                    st.error("❌ Erreur STOCK : La colonne Code Article est introuvable.")
-                    st.info(f"🔍 Colonnes lues : {colonnes_stock.tolist()}")
-                    st.stop()
-                    
-                if not col_qte_stock:
-                    st.error("❌ Erreur STOCK : Aucune colonne de quantité trouvée. Avez-vous mis le bon nombre de Lignes à Ignorer ?")
-                    st.info(f"🔍 Colonnes lues : {colonnes_stock.tolist()}")
-                    st.stop()
+                df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                # Retour à la liste stricte et sécurisée
+                col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
+                col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
                 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
-                df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock])
+                df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
                 # --- C. LECTURE PRODUCTION ---
@@ -247,14 +234,10 @@ if st.button("🚀 Calculer les disponibilités (V19)", type="primary", use_cont
                     df_temp_copy['SOURCE'] = f.name
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
 
-                    colonnes_prod = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    df_temp.columns = colonnes_prod
-                    
-                    col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_prod), None)
-                    
-                    # V19 : Recherche élastique Prod
-                    mots_cles_prod = ['QTE', 'QUANTIT', 'TOTAL', 'FAB', 'ENTREE', 'REALIS']
-                    col_qte_prod = next((c for c in colonnes_prod if any(mot in c for mot in mots_cles_prod)), None)
+                    df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                    # Retour à la liste stricte (Adieu le chasseur élastique qui cassait les dates)
+                    col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
+                    col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_temp.columns), None)
                     
                     if col_art_prod and col_qte_prod:
                         df_ext = pd.DataFrame()
@@ -263,12 +246,12 @@ if st.button("🚀 Calculer les disponibilités (V19)", type="primary", use_cont
                         
                         date_series = None
                         for col in ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']:
-                            if col in colonnes_prod:
+                            if col in df_temp.columns:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
                                 date_series = s_test if date_series is None else date_series.fillna(s_test)
                                     
                         if date_series is None or date_series.isna().all():
-                            for col in colonnes_prod:
+                            for col in df_temp.columns:
                                 if 'DATE' in col:
                                     s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
                                     date_series = s_test if date_series is None else date_series.fillna(s_test)
@@ -287,18 +270,13 @@ if st.button("🚀 Calculer les disponibilités (V19)", type="primary", use_cont
 
                 # --- D. LECTURE COMMANDES ---
                 df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd)
-                colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                df_commandes_brut.columns = colonnes_cmd
+                df_commandes_brut.columns = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
-                col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
-                col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
-                
-                # V19 : Recherche élastique Cmd
-                mots_cles_cmd = ['QTE', 'QUANTIT', 'TOTAL', 'COMMANDE', 'DEMANDE', 'BESOIN']
-                col_qte_cmd = next((c for c in colonnes_cmd if any(mot in c for mot in mots_cles_cmd)), None)
-                
-                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
-                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None)
+                col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_commandes_brut.columns), None)
+                col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in df_commandes_brut.columns), None)
+                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_commandes_brut.columns), None)
+                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in df_commandes_brut.columns), None)
+                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in df_commandes_brut.columns), None)
                 
                 df_commandes = pd.DataFrame()
                 df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
@@ -398,7 +376,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V19.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V20.xlsx", type="primary")
 
     with c_btn2:
         if FPDF_OK:
@@ -406,10 +384,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V19
+    # SCANNER GLOBAL V20
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V19")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V20")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
