@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V33")
-st.title("📦 Portail de Disponibilité - VERSION 33 🔴")
-st.write("Le Traqueur de Généalogie : Vérifiez les équivalences de vos articles.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V34")
+st.title("📦 Portail de Disponibilité - VERSION 34 🔴")
+st.write("Verrouillage de l'Arbre Généalogique. Le bug '105' est éliminé !")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,9 +288,9 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V33)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V34)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse, extraction et chaînage généalogique...'):
+        with st.spinner('Analyse, extraction et chaînage généalogique blindé...'):
             try:
                 log_diagnostic = []
                 
@@ -305,9 +305,10 @@ if st.button("🚀 Calculer les disponibilités (V33)", type="primary", use_cont
                         df_nom_scanner = pd.concat([df_nom_scanner, df_nom_brut.copy()], ignore_index=True)
                         df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                         
-                        # Liste élargie pour repérer la préparation
                         c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
-                        c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE', 'CODEPREPA'] if c in df_nom_brut.columns), None)
+                        # V34 : On retire PRODUITDEBASECODE pour éviter le faux lien vers '105'
+                        c_prepa = next((c for c in ['ARTPREPA', 'CODEPREPA', 'COMPOSANT'] if c in df_nom_brut.columns), None)
+                        
                         c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
                         c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
                         c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
@@ -325,8 +326,11 @@ if st.button("🚀 Calculer les disponibilités (V33)", type="primary", use_cont
                                 art_id = str(r['CLEAN_ART'])
                                 prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
                                 
-                                if prepa_id and prepa_id not in ["0", "NAN", art_id]:
-                                    dict_prepa[art_id] = prepa_id
+                                # V34 : On sécurise l'ajout dans le dictionnaire
+                                if prepa_id and prepa_id not in ["0", "NAN", "NONE", "105", art_id]:
+                                    # S'il n'y a pas encore de lien, on l'ajoute. (On n'écrase jamais un bon lien).
+                                    if art_id not in dict_prepa:
+                                        dict_prepa[art_id] = prepa_id
                                 
                                 if art_id not in dict_details:
                                     dict_details[art_id] = {
@@ -360,7 +364,7 @@ if st.button("🚀 Calculer les disponibilités (V33)", type="primary", use_cont
                                     if val > 0: dict_details[art_id]['cas_pal'] = val
                 
                 st.session_state['dict_details'] = dict_details
-                st.session_state['dict_prepa'] = dict_prepa  # Sauvegarde pour le Scanner !
+                st.session_state['dict_prepa'] = dict_prepa  
                 st.session_state['df_nom_brut'] = df_nom_scanner
 
                 # --- B. LECTURE STOCK ---
@@ -394,7 +398,7 @@ if st.button("🚀 Calculer les disponibilités (V33)", type="primary", use_cont
                     df_temp.columns = colonnes_temp
                     
                     liste_articles_prod = ['CODEARTENTREE', 'ARTENTREE', 'ARTICLECODEAE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
-                    liste_qtes_prod = ['RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QTEARTENTREE', 'QTEENTREE', 'QTEAE', 'QUANTITE', 'QTE', 'QTEFABRIQUEE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL']
+                    liste_qtes_prod = ['RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QTEARTENTREE', 'QTEENTREE', 'QTEAE', 'QUANTITE', 'QTE', 'QTEFABRIQUEE']
                     
                     col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
                     col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
@@ -592,7 +596,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V33.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V34.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -600,17 +604,16 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V33 (Avec Traqueur de Généalogie)
+    # SCANNER GLOBAL V34
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V33")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V34")
     st.write("Tapez un code article pour voir tous ses composants de préparation !")
-    recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
+    recherche = st.text_input("Tapez votre numéro (ex: 85633, 43754) et appuyez sur Entrée :")
     
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
         
-        # --- L'Affichage de la Généalogie ---
         if 'dict_prepa' in st.session_state:
             dict_p = st.session_state['dict_prepa']
             arbre = [rech_clean]
@@ -626,7 +629,7 @@ if st.session_state['calcul_ok']:
                 st.info(f"🧬 **Arbre de préparation de Python pour {rech_clean} :** " + " ➔ ".join(arbre))
                 st.write(f"*S'il y a une date dans vos usines pour l'un de ces {len(arbre)} articles, Python l'attribuera !*")
             else:
-                st.warning(f"⚠️ **Aucune préparation trouvée pour {rech_clean}**. Python pense que c'est un produit fini sans aucun composant. Vérifiez s'il manque une colonne 'ART PREPA' dans vos nomenclatures.")
+                st.warning(f"⚠️ **Aucune préparation trouvée pour {rech_clean}**. L'Arbre Généalogique s'arrête ici.")
         
         col_s1, col_s2, col_s3 = st.columns(3)
         
