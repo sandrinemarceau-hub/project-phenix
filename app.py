@@ -50,7 +50,7 @@ if not check_password():
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
-    st.info("🧠 Version 45 : Alignement parfait du tableau RDV")
+    st.info("🧠 THE BRAIN")
     if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
@@ -414,7 +414,7 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
 # INTERFACE VISUELLE
 # ==========================================
 st.set_page_config(layout="wide", page_title="Portail Logistique V45")
-st.title("📦 Portail de Disponibilité - VERSION 45 🔴")
+st.title("📦 Portail de Disponibilité 🔴")
 st.write("Alignement parfait du tableau RDV et Génération Multi-PDFs.")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -425,7 +425,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V45)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
