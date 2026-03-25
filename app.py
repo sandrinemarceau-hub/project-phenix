@@ -46,11 +46,11 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# OUTILS ET FONCTIONS DE BASE
+# OUTILS
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
-    st.info("🧠 Version 42 : Auto-Apprentissage + Générateur de RDV")
+    st.info("🧠 Version 43 : Générateur de RDV")
     if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
@@ -396,9 +396,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
 # ==========================================
 # INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V42")
-st.title("📦 Portail de Disponibilité - VERSION 42 🔴")
-st.write("Génération Multi-PDFs : Packing Lists et RDV Documents inclus.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V43")
+st.title("📦 Portail de Disponibilité - VERSION 43 🔴")
+st.write("Correction de la ponctuation et Génération Multi-PDFs : Packing Lists et RDV Documents.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
@@ -408,7 +408,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V43)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
@@ -449,12 +449,22 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
                                 
                                 if art_id not in dict_details:
                                     dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
-                                if c_lib: val = clean_nan(r[c_lib]); 
-                                if val and val != "NAN": dict_details[art_id]['libelle'] = val
-                                if c_poids: val = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]); 
-                                if val > 0: dict_details[art_id]['poids'] = val
-                                if c_cas_pal: val = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]); 
-                                if val > 0: dict_details[art_id]['cas_pal'] = val
+                                
+                                # Correction des sauts de ligne pour éviter l'erreur de comparaison String/Int !
+                                if c_lib: 
+                                    val_lib = clean_nan(r[c_lib]) 
+                                    if val_lib and val_lib != "NAN": 
+                                        dict_details[art_id]['libelle'] = val_lib
+                                        
+                                if c_poids: 
+                                    val_pds = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0])
+                                    if val_pds > 0: 
+                                        dict_details[art_id]['poids'] = val_pds
+                                        
+                                if c_cas_pal: 
+                                    val_pal = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0])
+                                    if val_pal > 0: 
+                                        dict_details[art_id]['cas_pal'] = val_pal
 
                 st.session_state['dict_details'] = dict_details
                 st.session_state['df_nom_brut'] = df_nom_scanner
@@ -469,7 +479,9 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                 col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'STOCKPHYSIQUE', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
                 
-                if not col_art_stock or not col_qte_stock: st.error("❌ Erreur STOCK"); st.stop()
+                if not col_art_stock or not col_qte_stock: 
+                    st.error("❌ Erreur STOCK : Colonnes introuvables.")
+                    st.stop()
                 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
@@ -497,7 +509,9 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
                             parent = nettoyage_extreme(pd.Series([r[col_sortie_auto]]))[0]
                             enfant = nettoyage_extreme(pd.Series([r[col_entree_auto]]))[0]
                             if parent and enfant and parent != enfant and parent not in ["0", "NAN", "NONE"] and enfant not in ["0", "NAN", "NONE"]:
-                                if parent not in dict_prepa: dict_prepa[parent] = enfant; liens_appris += 1
+                                if parent not in dict_prepa: 
+                                    dict_prepa[parent] = enfant
+                                    liens_appris += 1
 
                     arts_cols = [c for c in colonnes_temp if any(k in c for k in ['ART', 'CODE', 'REF', 'PRODUIT', 'COMPOSANT']) and not any(k in c for k in ['QTE', 'QUANT', 'DATE', 'ECH'])]
                     qtes_cols = [c for c in colonnes_temp if any(k in c for k in ['QTE', 'QUANT', 'RESTE', 'AFAIRE', 'BESOIN', 'LANCE', 'PREVU', 'PROD', 'ORDRE']) and not any(k in c for k in ['ART', 'CODE', 'DATE', 'ECH', 'REF'])]
@@ -516,7 +530,8 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
                     else: df_temp['OMNI_QTE'] = 0
 
                     for idx, row in df_temp.iterrows():
-                        qte = row.get('OMNI_QTE', 0); d = row.get('OMNI_DATE')
+                        qte = row.get('OMNI_QTE', 0)
+                        d = row.get('OMNI_DATE')
                         if pd.notna(d):
                             if qte <= 0: qte = 99999
                             for c in arts_cols:
@@ -569,15 +584,20 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
 
                 resultats = []
                 for index, commande in df_commandes.iterrows():
-                    article = commande['ARTICLE_CODE']; qte_restante = commande['QUANTITE']
-                    qte_prise_stock = 0; qte_prise_prod = 0; dates_trouvees = []
+                    article = commande['ARTICLE_CODE']
+                    qte_restante = commande['QUANTITE']
+                    qte_prise_stock = 0
+                    qte_prise_prod = 0
+                    dates_trouvees = []
                     
                     def consommer(code_a_chercher, qte_a_trouver):
                         q_stk, q_prd = 0, 0
                         s = stock_actuel.get(code_a_chercher, 0)
                         if s > 0:
-                            prise = min(s, qte_a_trouver); stock_actuel[code_a_chercher] -= prise
-                            q_stk += prise; qte_a_trouver -= prise
+                            prise = min(s, qte_a_trouver)
+                            stock_actuel[code_a_chercher] -= prise
+                            q_stk += prise
+                            qte_a_trouver -= prise
                             
                         if qte_a_trouver > 0:
                             for prod in productions_futures:
@@ -587,28 +607,41 @@ if st.button("🚀 Calculer les disponibilités (V42)", type="primary", use_cont
                                 elif code_a_chercher in str(prod['ARTICLE']): match = True
 
                                 if match and prod['QTE_PRODUITE'] > 0:
-                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver); prod['QTE_PRODUITE'] -= prise
-                                    q_prd += prise; qte_a_trouver -= prise; dates_trouvees.append(prod['Date_Dispo_Reelle'])
+                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver)
+                                    prod['QTE_PRODUITE'] -= prise
+                                    q_prd += prise
+                                    qte_a_trouver -= prise
+                                    dates_trouvees.append(prod['Date_Dispo_Reelle'])
                                     if qte_a_trouver == 0: break
                         return q_stk, q_prd, qte_a_trouver
 
                     qs1, qp1, qte_restante = consommer(article, qte_restante)
-                    qte_prise_stock += qs1; qte_prise_prod += qp1
+                    qte_prise_stock += qs1
+                    qte_prise_prod += qp1
                     utilise_prepa = "Non"
                     if qte_restante > 0:
                         cascade = get_cascade_prepas(article)
                         for prepa in cascade:
                             if qte_restante <= 0: break
                             qs2, qp2, qte_restante = consommer(prepa, qte_restante)
-                            qte_prise_stock += qs2; qte_prise_prod += qp2
+                            qte_prise_stock += qs2
+                            qte_prise_prod += qp2
                             if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
 
                     if qte_restante > 0:
-                        if dates_trouvees: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"; statut = "Attente Prod (Partiel)"
-                        else: date_dispo = "Pas de date"; statut = "Rupture"
+                        if dates_trouvees: 
+                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y') + " (Partiel)"
+                            statut = "Attente Prod (Partiel)"
+                        else: 
+                            date_dispo = "Pas de date"
+                            statut = "Rupture"
                     else:
-                        if not dates_trouvees: date_dispo = "Immédiate"; statut = "En Stock"
-                        else: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y'); statut = "Attente Prod"
+                        if not dates_trouvees: 
+                            date_dispo = "Immédiate"
+                            statut = "En Stock"
+                        else: 
+                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y')
+                            statut = "Attente Prod"
                         
                     resultats.append({
                         'Num_Commande': commande['NUM_CDE'], 'Client': commande['CLIENT'], 'Article': article,
@@ -635,7 +668,7 @@ if st.session_state['calcul_ok']:
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V42.xlsx", type="primary", use_container_width=True)
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V43.xlsx", type="primary", use_container_width=True)
     with c_btn2:
         if REPORTLAB_OK:
             zip_pack = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
@@ -648,7 +681,7 @@ if st.session_state['calcul_ok']:
             st.warning("Générateur RDV inactif (FPDF non installé).")
 
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V42")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V43")
     recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
