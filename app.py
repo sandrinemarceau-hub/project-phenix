@@ -27,7 +27,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# BOUTON D'URGENCE (Vider la mémoire)
+# BOUTON D'URGENCE
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
@@ -45,28 +45,43 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
     return s
 
+# NOUVEAU : Lecteur Universel (Spécial OpenOffice)
+def lire_fichier(fichier, lignes_a_ignorer):
+    nom = fichier.name.lower()
+    if nom.endswith('.csv'):
+        # On essaie d'abord avec le point-virgule (Standard OpenOffice/Excel Français)
+        try:
+            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=';', encoding='latin-1')
+        except:
+            # Si ça plante, on essaie avec la virgule (Standard Américain)
+            fichier.seek(0)
+            return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=',', encoding='utf-8')
+    else:
+        # Pour les xls ou xlsx
+        return pd.read_excel(fichier, skiprows=lignes_a_ignorer)
+
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V11")
-st.title("📦 Portail de Disponibilité - VERSION 11 🔴")
-st.write("Déposez vos exports ci-dessous. Le moteur V11 (Aspirateur Universel de Dates) est activé.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V12")
+st.title("📦 Portail de Disponibilité - VERSION 12 🔴 (Compatible OpenOffice)")
+st.write("Enregistrez vos fichiers en **.CSV** depuis OpenOffice et déposez-les ci-dessous.")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     st.subheader("1. Fichier Stocks")
-    fichier_stock = st.file_uploader("Export_Stock.xlsx", type=['xlsx'])
+    fichier_stock = st.file_uploader("Fichier Stock (.csv, .xls, .xlsx)", type=['xlsx', 'xls', 'csv'])
     skip_stock = st.number_input("Lignes à ignorer (Stock)", min_value=0, value=3)
 
 with col2:
     st.subheader("2. Fichiers Production")
-    fichiers_prod = st.file_uploader("Glissez les fichiers (Max 3)", type=['xlsx'], accept_multiple_files=True)
+    fichiers_prod = st.file_uploader("Fichiers Prod (.csv, .xls, .xlsx)", type=['xlsx', 'xls', 'csv'], accept_multiple_files=True)
     skip_prod = st.number_input("Lignes à ignorer (Prod)", min_value=0, value=0)
 
 with col3:
     st.subheader("3. Fichier Commandes")
-    fichier_commandes = st.file_uploader("Export_Commandes.xlsx", type=['xlsx'])
+    fichier_commandes = st.file_uploader("Fichier Commandes (.csv, .xls, .xlsx)", type=['xlsx', 'xls', 'csv'])
     skip_cmd = st.number_input("Lignes à ignorer (Cmd)", min_value=0, value=0)
 
 # ==========================================
@@ -74,14 +89,14 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V12)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Aspiration des dates et calcul en cours...'):
+        with st.spinner('Lecture universelle et calcul en cours...'):
             try:
                 rapport = {}
 
                 # --- A. LECTURE STOCK ---
-                df_stock_brut = pd.read_excel(fichier_stock, skiprows=skip_stock)
+                df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
@@ -93,7 +108,7 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
-                df_stock['STOCK_DISPO'] = pd.to_numeric(df_stock_brut[col_qte_stock], errors='coerce').fillna(0) if col_qte_stock else 0
+                df_stock['STOCK_DISPO'] = pd.to_numeric(df_stock_brut[col_qte_stock].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_stock else 0
                 
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
                 rapport['stock_lignes'] = len(df_stock)
@@ -103,7 +118,7 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                 df_prod_brut_total = pd.DataFrame() 
 
                 for f in fichiers_prod:
-                    df_temp = pd.read_excel(f, skiprows=skip_prod)
+                    df_temp = lire_fichier(f, skip_prod)
                     
                     df_temp_copy = df_temp.copy()
                     df_temp_copy['SOURCE'] = f.name
@@ -117,13 +132,12 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                     if col_art_prod and col_qte_prod:
                         df_extracted = pd.DataFrame()
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
-                        df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod], errors='coerce').fillna(0)
+                        # Gestion des virgules pour OpenOffice
+                        df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                         
-                        # LE SCAVENGER DE DATES V11
                         date_series = None
                         colonnes_dates_possibles = ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']
                         
-                        # 1. On cherche d'abord dans les colonnes ciblées
                         for col in colonnes_dates_possibles:
                             if col in df_temp.columns:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
@@ -132,7 +146,6 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                                 else:
                                     date_series = date_series.fillna(s_test)
                                     
-                        # 2. Sécurité ultime : On cherche dans TOUTES les colonnes qui contiennent "DATE"
                         if date_series is None or date_series.isna().all():
                             for col in df_temp.columns:
                                 if 'DATE' in col:
@@ -142,7 +155,6 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                                     else:
                                         date_series = date_series.fillna(s_test)
                                         
-                        # Si vraiment aucune date, on remplit de vides
                         if date_series is None:
                             date_series = pd.Series(pd.NaT, index=df_temp.index)
                                     
@@ -170,7 +182,7 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                 productions_futures = df_production_valide.to_dict('records')
 
                 # --- C. LECTURE COMMANDES ---
-                df_commandes_brut = pd.read_excel(fichier_commandes, skiprows=skip_cmd)
+                df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd)
                 df_commandes_brut.columns = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 
                 col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_commandes_brut.columns), None)
@@ -187,10 +199,10 @@ if st.button("🚀 Calculer les disponibilités (V11)", type="primary", use_cont
                 df_commandes = pd.DataFrame()
                 df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
-                df_commandes['QUANTITE'] = pd.to_numeric(df_commandes_brut[col_qte_cmd], errors='coerce').fillna(0) if col_qte_cmd else 0
+                df_commandes['QUANTITE'] = pd.to_numeric(df_commandes_brut[col_qte_cmd].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_cmd else 0
                 df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
                 df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
-                df_commandes['URGENCE'] = df_commandes_brut[col_urgence].fillna(0) if col_urgence else 0
+                df_commandes['URGENCE'] = pd.to_numeric(df_commandes_brut[col_urgence], errors='coerce').fillna(0) if col_urgence else 0
                 
                 lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
@@ -254,8 +266,7 @@ if st.session_state['calcul_ok']:
     with st.expander("📊 Voir le rapport de lecture des données", expanded=False):
         st.write(f"- **Stock :** {rapport.get('stock_lignes', 0)} articles lus.")
         st.write(f"- **Commandes :** {rapport.get('cmd_valides', 0)} commandes à traiter.")
-        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes de production valides (Dates et Qtés trouvées).")
-        st.write(f"- **Lignes ignorées :** {rapport.get('prod_ignorees', 0)} lignes.")
+        st.write(f"- **Production :** {rapport.get('prod_valides', 0)} lignes de production valides.")
 
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
@@ -272,10 +283,10 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # SCANNER GLOBAL V11 (Nettoyé)
+    # SCANNER GLOBAL V12
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V11 (Vue Épurée)")
+    st.subheader("🕵️‍♂️ Scanner Global V12")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
@@ -286,16 +297,11 @@ if st.session_state['calcul_ok']:
         prods_trouvees = df_prod_brut[mask.any(axis=1)].copy()
         
         if not prods_trouvees.empty:
-            # MAGIE V11 : On supprime toutes les colonnes vides (les None) pour une lecture parfaite
             prods_trouvees = prods_trouvees.dropna(axis=1, how='all')
-            
-            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) trouvée(s). Voici l'extrait exact de vos données :**")
-            # Formatage propre des dates si elles sont reconnues
+            st.success(f"🏭 **{len(prods_trouvees)} ligne(s) trouvée(s) :**")
             for col in prods_trouvees.columns:
                 if pd.api.types.is_datetime64_any_dtype(prods_trouvees[col]):
                     prods_trouvees[col] = prods_trouvees[col].dt.strftime('%d/%m/%Y')
             st.dataframe(prods_trouvees, use_container_width=True)
-            
-            st.info("👆 Vérifiez la colonne DATE PLANIF ci-dessus. Si la date apparaît bien ici, le tableau des résultats plus haut DOIT l'avoir consommée !")
         else:
-            st.error(f"⚠️ Le numéro {recherche} n'existe pas ou a été ignoré.")
+            st.error(f"⚠️ Le numéro {recherche} n'existe pas.")
