@@ -52,8 +52,8 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'\.0$', '', regex=True) 
     s = s.str.upper() 
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
-    s = s.str.lstrip('0') # V17 : Détruit les zéros initiaux (ex: 085633 -> 85633)
-    s = s.replace('', '0') # Sécurité si la case était juste un zéro
+    s = s.str.lstrip('0') 
+    s = s.replace('', '0') 
     return s
 
 def nettoyage_quantite(serie):
@@ -143,9 +143,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V17")
-st.title("📦 Portail de Disponibilité - VERSION 17 🔴")
-st.write("Destructeur de zéros initiaux et Scanner Absolu activés.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V18")
+st.title("📦 Portail de Disponibilité - VERSION 18 🔴")
+st.write("Correction de la lecture des stocks (Prise en compte de 'Total général')")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -174,7 +174,7 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V17)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V18)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Nettoyage profond et chaînage en cours...'):
             try:
@@ -216,11 +216,23 @@ if st.button("🚀 Calculer les disponibilités (V17)", type="primary", use_cont
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
-                col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
+                
+                # VERSION 18 : On ajoute TOTAL, TOTALGNRAL, et TOTALGENERAL pour capter les TCD d'OpenOffice !
+                col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
+                
+                if not col_art_stock:
+                    st.error("❌ Erreur STOCK : La colonne Code Article est introuvable.")
+                    st.info(f"🔍 Colonnes lues : {df_stock_brut.columns.tolist()}")
+                    st.stop()
+                    
+                if not col_qte_stock:
+                    st.error("❌ Erreur STOCK : La colonne Quantité est introuvable. Avez-vous mis le bon nombre de Lignes à Ignorer ?")
+                    st.info(f"🔍 Colonnes lues : {df_stock_brut.columns.tolist()}")
+                    st.stop()
                 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
-                df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
+                df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock])
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
                 # --- C. LECTURE PRODUCTION ---
@@ -235,7 +247,7 @@ if st.button("🚀 Calculer les disponibilités (V17)", type="primary", use_cont
 
                     df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
-                    col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE'] if c in df_temp.columns), None)
+                    col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_temp.columns), None)
                     
                     if col_art_prod and col_qte_prod:
                         df_ext = pd.DataFrame()
@@ -272,7 +284,7 @@ if st.button("🚀 Calculer les disponibilités (V17)", type="primary", use_cont
                 
                 col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_commandes_brut.columns), None)
                 col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in df_commandes_brut.columns), None)
-                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE'] if c in df_commandes_brut.columns), None)
+                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_commandes_brut.columns), None)
                 col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in df_commandes_brut.columns), None)
                 col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in df_commandes_brut.columns), None)
                 
@@ -374,7 +386,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V17.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V18.xlsx", type="primary")
 
     with c_btn2:
         if FPDF_OK:
@@ -382,10 +394,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V17
+    # SCANNER GLOBAL V18
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V17")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V18")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
@@ -403,7 +415,6 @@ if st.session_state['calcul_ok']:
                 res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
                 col.write(f"**{title} : {len(res)} ligne(s)**")
                 if not res.empty:
-                    # Formate les dates
                     for c in res.columns:
                         if pd.api.types.is_datetime64_any_dtype(res[c]):
                             res[c] = res[c].dt.strftime('%d/%m/%Y')
