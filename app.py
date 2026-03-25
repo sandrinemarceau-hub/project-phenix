@@ -136,21 +136,12 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             pays = clean_nan(lignes.iloc[0]['Pays'])
             exportateur = clean_nan(lignes.iloc[0]['Exportateur']).upper()
             
-            # ==============================================================
-            # 🎯 AIGUILLEUR D'EXPORTATEURS (À MODIFIER SELON VOS BESOINS)
-            # ==============================================================
-            # L'adresse par défaut si Python ne reconnaît pas l'exportateur
             txt_exp = "<b>EXPORTER:</b><br/>LUC BELAIRE INTERNATIONAL, LTD<br/>DUBLIN, IRELAND"
-            
-            # Si le nom de l'exportateur contient un de ces mots, l'adresse change :
             if "FRANCE" in exportateur or "SOVEREIGN" in exportateur:
                 txt_exp = "<b>EXPORTER:</b><br/>SOVEREIGN BRANDS FRANCE<br/>10 RUE DE LA LOGISTIQUE<br/>75000 PARIS, FRANCE"
             elif "USA" in exportateur or "AMERICA" in exportateur:
                 txt_exp = "<b>EXPORTER:</b><br/>SOVEREIGN BRANDS USA<br/>123 BROADWAY AVE<br/>NEW YORK, NY 10001, USA"
-            # Ajoutez autant de "elif" que vous le souhaitez !
-            # ==============================================================
 
-            # Bloc Consignee dynamique (ajoute la ligne seulement si elle existe)
             consignee_lines = [f"<b>CONSIGNEE:</b><br/>{safe_xml(client)}"]
             if adresse: consignee_lines.append(safe_xml(adresse))
             if ville: consignee_lines.append(safe_xml(ville))
@@ -266,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V25")
-st.title("📦 Portail de Disponibilité - VERSION 25 🔴")
-st.write("Aspirateur d'adresses et Aiguilleur d'Exportateurs intégrés.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V27")
+st.title("📦 Portail de Disponibilité - VERSION 27 🔴")
+st.write("Mode 'Cerveau Fusionné' : Déposez plusieurs fichiers Nomenclatures en même temps !")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,8 +279,9 @@ with col3:
     skip_cmd = st.number_input("Ignorer (Cmd)", min_value=0, value=0)
 
 with col4:
-    st.subheader("4. Nomenclature")
-    fichier_nom = st.file_uploader("Fichier Nomencl.", type=['xlsx', 'xls', 'csv'])
+    # NOUVEAU : Accept Multiple Files pour la nomenclature !
+    st.subheader("4. Nomenclatures")
+    fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xlsx', 'xls', 'csv'], accept_multiple_files=True)
     skip_nom = st.number_input("Ignorer (Nom.)", min_value=0, value=0)
 
 # ==========================================
@@ -297,58 +289,91 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V25)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V27)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse et extraction des adresses en cours...'):
+        with st.spinner('Analyse et fusion des nomenclatures en cours...'):
             try:
-                # --- A. LECTURE NOMENCLATURE ---
+                # --- A. LECTURE NOMENCLATURES MULTIPLES ---
                 dict_prepa = {}
                 dict_details = {}
-                if fichier_nom:
-                    df_nom_brut = lire_fichier(fichier_nom, skip_nom)
-                    st.session_state['df_nom_brut'] = df_nom_brut.copy() 
-                    
-                    df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    
-                    c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
-                    c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE'] if c in df_nom_brut.columns), None)
-                    c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
-                    c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
-                    c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
-                    c_poids = next((c for c in ['POIDSBTLLES', 'POIDS', 'WEIGHT'] if c in df_nom_brut.columns), None)
-                    c_pal_type = next((c for c in ['PALETTE', 'TYPEPALETTE'] if c in df_nom_brut.columns), None)
-                    c_cas_pal = next((c for c in ['UAUEMAX', 'PAL', 'CASESPERPALLET'] if c in df_nom_brut.columns), None)
-                    c_degres = next((c for c in ['DEGRES', 'DEGRE'] if c in df_nom_brut.columns), None)
-                    c_couleur = next((c for c in ['COULEUR', 'COLOR'] if c in df_nom_brut.columns), None)
-                    
-                    if c_art:
-                        df_nom_brut['CLEAN_ART'] = nettoyage_extreme(df_nom_brut[c_art])
-                        if c_prepa: df_nom_brut['CLEAN_PREPA'] = nettoyage_extreme(df_nom_brut[c_prepa])
-                            
-                        for _, r in df_nom_brut.iterrows():
-                            art_id = str(r['CLEAN_ART'])
-                            prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
-                            if prepa_id and prepa_id != "0" and prepa_id != "NAN" and prepa_id != art_id:
-                                dict_prepa[art_id] = prepa_id
+                
+                # Le Scanner a besoin d'une vue d'ensemble : on va concaténer les nomenclatures lues
+                df_nom_scanner = pd.DataFrame()
+
+                if fichiers_nom:
+                    for f_nom in fichiers_nom:
+                        df_nom_brut = lire_fichier(f_nom, skip_nom)
+                        
+                        # Ajout au Scanner
+                        df_nom_scanner = pd.concat([df_nom_scanner, df_nom_brut.copy()], ignore_index=True)
+                        
+                        df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                        
+                        c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
+                        c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE'] if c in df_nom_brut.columns), None)
+                        c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
+                        c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
+                        c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
+                        c_poids = next((c for c in ['POIDSBTLLES', 'POIDS', 'WEIGHT'] if c in df_nom_brut.columns), None)
+                        c_pal_type = next((c for c in ['PALETTE', 'TYPEPALETTE'] if c in df_nom_brut.columns), None)
+                        c_cas_pal = next((c for c in ['UAUEMAX', 'PAL', 'CASESPERPALLET'] if c in df_nom_brut.columns), None)
+                        c_degres = next((c for c in ['DEGRES', 'DEGRE'] if c in df_nom_brut.columns), None)
+                        c_couleur = next((c for c in ['COULEUR', 'COLOR'] if c in df_nom_brut.columns), None)
+                        
+                        if c_art:
+                            df_nom_brut['CLEAN_ART'] = nettoyage_extreme(df_nom_brut[c_art])
+                            if c_prepa: df_nom_brut['CLEAN_PREPA'] = nettoyage_extreme(df_nom_brut[c_prepa])
                                 
-                            dict_details[art_id] = {
-                                'libelle': clean_nan(r[c_lib], "Inconnu") if c_lib else "Inconnu",
-                                'format': clean_nan(r[c_fmt], "") if c_fmt else "",
-                                'degres': clean_nan(r[c_degres], "") if c_degres else "",
-                                'couleur': clean_nan(r[c_couleur], "") if c_couleur else "",
-                                'uc': float(nettoyage_quantite(pd.Series([r[c_uc]]))[0]) if c_uc else 6.0,
-                                'poids': float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]) if c_poids else 0.0,
-                                'type_pal': clean_nan(r[c_pal_type], "N/A") if c_pal_type else "N/A",
-                                'cas_pal': float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]) if c_cas_pal else 100.0
-                            }
+                            for _, r in df_nom_brut.iterrows():
+                                art_id = str(r['CLEAN_ART'])
+                                prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
+                                
+                                # Ajout du lien de parenté
+                                if prepa_id and prepa_id not in ["0", "NAN", art_id]:
+                                    dict_prepa[art_id] = prepa_id
+                                
+                                # Initialisation sécurisée
+                                if art_id not in dict_details:
+                                    dict_details[art_id] = {
+                                        'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '',
+                                        'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0
+                                    }
+                                
+                                # Mise à jour conditionnelle (on écrase si la donnée est valide)
+                                if c_lib:
+                                    val = clean_nan(r[c_lib])
+                                    if val and val != "NAN": dict_details[art_id]['libelle'] = val
+                                if c_fmt:
+                                    val = clean_nan(r[c_fmt])
+                                    if val and val != "NAN": dict_details[art_id]['format'] = val
+                                if c_degres:
+                                    val = clean_nan(r[c_degres])
+                                    if val and val != "NAN": dict_details[art_id]['degres'] = val
+                                if c_couleur:
+                                    val = clean_nan(r[c_couleur])
+                                    if val and val != "NAN": dict_details[art_id]['couleur'] = val
+                                if c_uc:
+                                    val = float(nettoyage_quantite(pd.Series([r[c_uc]]))[0])
+                                    if val > 0: dict_details[art_id]['uc'] = val
+                                if c_poids:
+                                    val = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0])
+                                    if val > 0: dict_details[art_id]['poids'] = val
+                                if c_pal_type:
+                                    val = clean_nan(r[c_pal_type])
+                                    if val and val not in ["NAN", "N/A"]: dict_details[art_id]['type_pal'] = val
+                                if c_cas_pal:
+                                    val = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0])
+                                    if val > 0: dict_details[art_id]['cas_pal'] = val
+                
                 st.session_state['dict_details'] = dict_details
+                st.session_state['df_nom_brut'] = df_nom_scanner
 
                 # --- B. LECTURE STOCK ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 st.session_state['df_stock_brut'] = df_stock_brut.copy() 
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
+                col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                 col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
                 
                 if not col_art_stock or not col_qte_stock:
@@ -370,9 +395,14 @@ if st.button("🚀 Calculer les disponibilités (V25)", type="primary", use_cont
                     df_temp_copy['SOURCE'] = f.name
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
 
-                    df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
-                    col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_temp.columns), None)
+                    colonnes_temp = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                    df_temp.columns = colonnes_temp
+                    
+                    liste_articles_prod = ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
+                    liste_qtes_prod = ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL', 'QTEPREVUE', 'QUANTITEPREVUE', 'RESTEAFAIRE', 'QTEFABRIQUEE']
+                    
+                    col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
+                    col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
                     
                     if col_art_prod and col_qte_prod:
                         df_ext = pd.DataFrame()
@@ -381,191 +411,38 @@ if st.button("🚀 Calculer les disponibilités (V25)", type="primary", use_cont
                         
                         date_series = None
                         for col in ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']:
-                            if col in df_temp.columns:
+                            if col in colonnes_temp:
                                 s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
                                 date_series = s_test if date_series is None else date_series.fillna(s_test)
                                     
                         if date_series is None or date_series.isna().all():
-                            for col in df_temp.columns:
+                            for col in colonnes_temp:
                                 if 'DATE' in col:
                                     s_test = pd.to_datetime(df_temp[col], dayfirst=True, errors='coerce')
                                     date_series = s_test if date_series is None else date_series.fillna(s_test)
                                         
                         df_ext['DATE_PROD'] = date_series if date_series is not None else pd.Series(pd.NaT, index=df_temp.index)
                         liste_prod.append(df_ext)
+                    else:
+                        st.warning(f"⚠️ Alerte Fichier Ignoré : Le fichier '{f.name}' n'a pas pu être lu. Je ne trouve pas la colonne d'Article ou de Quantité. \n\n 🔍 Voici les colonnes que j'ai trouvées dedans : {colonnes_temp.tolist()}")
                 
                 st.session_state['df_prod_brut'] = df_prod_brut_total 
-                df_production = pd.concat(liste_prod, ignore_index=True)
-                df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
-                df_production_valide = df_production_valide[df_production_valide['QTE_PRODUITE'] > 0]
-                
-                df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
-                df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
-                productions_futures = df_production_valide.to_dict('records')
+                if liste_prod:
+                    df_production = pd.concat(liste_prod, ignore_index=True)
+                    df_production_valide = df_production.dropna(subset=['DATE_PROD']).copy()
+                    df_production_valide = df_production_valide[df_production_valide['QTE_PRODUITE'] > 0]
+                    
+                    df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
+                    df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
+                    productions_futures = df_production_valide.to_dict('records')
+                else:
+                    productions_futures = []
 
-                # --- D. LECTURE COMMANDES (NOUVEAU : Extraction Adresses complètes) ---
+                # --- D. LECTURE COMMANDES ---
                 df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd)
                 colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 df_commandes_brut.columns = colonnes_cmd
                 
                 col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
                 col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
-                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None)
-                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
-                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None)
-                
-                # Nouveaux champs pour l'adresse et l'exportateur
-                col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
-                col_ville = next((c for c in colonnes_cmd if 'VILLE' in c or 'CITY' in c), None)
-                col_pays = next((c for c in colonnes_cmd if 'PAYS' in c or 'COUNTRY' in c), None)
-                col_exportateur = next((c for c in colonnes_cmd if 'EXPORT' in c or 'SOCIETE' in c or 'FILIALE' in c or 'STEAPP' in c), None)
-                
-                df_commandes = pd.DataFrame()
-                df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
-                df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
-                df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
-                df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
-                df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
-                
-                # Enregistrement des données d'adresse
-                df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
-                df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
-                df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
-                df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
-                
-                df_commandes['URGENCE'] = 0
-                df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
-                df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
-
-                # --- E. ALGORITHME AVEC CHAÎNAGE ---
-                resultats = []
-                for index, commande in df_commandes.iterrows():
-                    article = commande['ARTICLE_CODE']
-                    qte_restante = commande['QUANTITE']
-                    
-                    qte_prise_stock = 0
-                    qte_prise_prod = 0
-                    dates_trouvees = []
-                    
-                    def consommer(code_a_chercher, qte_a_trouver):
-                        q_stk, q_prd = 0, 0
-                        s = stock_actuel.get(code_a_chercher, 0)
-                        if s > 0:
-                            prise = min(s, qte_a_trouver)
-                            stock_actuel[code_a_chercher] -= prise
-                            q_stk += prise
-                            qte_a_trouver -= prise
-                            
-                        if qte_a_trouver > 0:
-                            for prod in productions_futures:
-                                if prod['ARTICLE'] == code_a_chercher and prod['QTE_PRODUITE'] > 0:
-                                    prise = min(prod['QTE_PRODUITE'], qte_a_trouver)
-                                    prod['QTE_PRODUITE'] -= prise
-                                    q_prd += prise
-                                    qte_a_trouver -= prise
-                                    dates_trouvees.append(prod['Date_Dispo_Reelle'])
-                                    if qte_a_trouver == 0: break
-                        return q_stk, q_prd, qte_a_trouver
-
-                    qs1, qp1, qte_restante = consommer(article, qte_restante)
-                    qte_prise_stock += qs1
-                    qte_prise_prod += qp1
-                    
-                    utilise_prepa = "Non"
-                    if qte_restante > 0 and article in dict_prepa:
-                        prepa = dict_prepa[article]
-                        qs2, qp2, qte_restante = consommer(prepa, qte_restante)
-                        qte_prise_stock += qs2
-                        qte_prise_prod += qp2
-                        if (qs2 + qp2) > 0: utilise_prepa = f"Oui ({prepa})"
-
-                    if qte_restante > 0:
-                        statut = "Rupture"
-                        date_dispo = "Pas de date"
-                    else:
-                        if len(dates_trouvees) == 0:
-                            date_dispo = "Immédiate"
-                            statut = "En Stock"
-                        else:
-                            date_dispo = max(dates_trouvees).strftime('%d/%m/%Y')
-                            statut = "Attente Prod"
-                        
-                    resultats.append({
-                        'Num_Commande': commande['NUM_CDE'],
-                        'Client': commande['CLIENT'],
-                        'Adresse': commande['ADRESSE'],
-                        'Ville': commande['VILLE'],
-                        'Pays': commande['PAYS'],
-                        'Exportateur': commande['EXPORTATEUR'],
-                        'Article': article,
-                        'Qte_Demandée': int(commande['QUANTITE']),
-                        'Tiré_Stock': int(qte_prise_stock),
-                        'Tiré_Prod': int(qte_prise_prod),
-                        'Remplacement_Prepa': utilise_prepa,
-                        'Manquant': int(qte_restante),
-                        'Statut': statut,
-                        'Date_Disponibilité': date_dispo
-                    })
-
-                st.session_state['df_final'] = pd.DataFrame(resultats)
-                st.session_state['calcul_ok'] = True
-
-            except Exception as e:
-                st.error(f"Une erreur s'est produite. Détails : {e}")
-                st.session_state['calcul_ok'] = False
-    else:
-        st.warning("Veuillez déposer Stock, Prod, Commandes et Nomenclature.")
-
-# ==========================================
-# 4. AFFICHAGE ET EXPORT PDF
-# ==========================================
-if st.session_state['calcul_ok']:
-    st.success("✅ Calcul terminé avec succès !")
-    # On cache les colonnes d'adresse techniques pour un affichage web plus propre
-    colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
-    st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
-
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1:
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V25.xlsx", type="primary")
-
-    with c_btn2:
-        if REPORTLAB_OK:
-            zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
-            st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
-
-    # ==========================================
-    # SCANNER GLOBAL V25
-    # ==========================================
-    st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V25")
-    recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
-    
-    if recherche:
-        rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
-        col_s1, col_s2, col_s3 = st.columns(3)
-        
-        def display_scan(df_name, title, col):
-            if df_name in st.session_state:
-                df = st.session_state[df_name]
-                def match_cell(val):
-                    val_c = re.sub(r'[^A-Z0-9]', '', str(val).upper().replace('.0', '')).lstrip('0')
-                    return rech_clean in val_c if rech_clean else False
-                
-                mask = df.applymap(match_cell)
-                res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
-                col.write(f"**{title} : {len(res)} ligne(s)**")
-                if not res.empty:
-                    for c in res.columns:
-                        if pd.api.types.is_datetime64_any_dtype(res[c]):
-                            res[c] = res[c].dt.strftime('%d/%m/%Y')
-                    col.dataframe(res, use_container_width=True)
-                else:
-                    col.info("Introuvable.")
-
-        display_scan('df_stock_brut', '📦 STOCK', col_s1)
-        display_scan('df_prod_brut', '🏭 PRODUCTION', col_s2)
-        display_scan('df_nom_brut', '🧠 NOMENCLATURE', col_s3)
+                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEU
