@@ -92,7 +92,6 @@ def format_num(val):
     if s.endswith('.'): s = s[:-1]
     return s if s else "0"
 
-# LECTEUR MULTI-ONGLETS INTELLIGENT
 def lire_fichier(fichier, lignes_a_ignorer):
     nom = fichier.name.lower()
     fichier.seek(0)
@@ -106,7 +105,6 @@ def lire_fichier(fichier, lignes_a_ignorer):
         xls = pd.ExcelFile(fichier)
         best_df = None
         max_score = -1
-        # Mots-clés pour repérer la vraie nomenclature
         mots_cles = ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'QUANTITE', 'QTE', 'STOCK', 'POIDS', 'LIBELLE', 'PALETTE', 'FORMAT', 'UAUEMAX', 'STOCKPHYSIQUE']
         
         for sheet in xls.sheet_names:
@@ -120,11 +118,10 @@ def lire_fichier(fichier, lignes_a_ignorer):
             except:
                 pass
         
-        if best_df is not None:
-            return best_df
+        if best_df is not None: return best_df
         return pd.read_excel(xls, sheet_name=0, skiprows=lignes_a_ignorer)
 
-# --- GÉNÉRATEUR PACKING LISTS REPORTLAB (VERSION 24) ---
+# --- GÉNÉRATEUR PACKING LISTS REPORTLAB ---
 def generer_packing_lists_zip(df_resultats, dict_details):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
@@ -132,7 +129,33 @@ def generer_packing_lists_zip(df_resultats, dict_details):
         for cmd in commandes:
             if str(cmd).upper() in ["INCONNU", "NAN"]: continue
             lignes = df_resultats[df_resultats['Num_Commande'] == cmd]
+            
             client = str(lignes.iloc[0]['Client'])
+            adresse = clean_nan(lignes.iloc[0]['Adresse'])
+            ville = clean_nan(lignes.iloc[0]['Ville'])
+            pays = clean_nan(lignes.iloc[0]['Pays'])
+            exportateur = clean_nan(lignes.iloc[0]['Exportateur']).upper()
+            
+            # ==============================================================
+            # 🎯 AIGUILLEUR D'EXPORTATEURS (À MODIFIER SELON VOS BESOINS)
+            # ==============================================================
+            # L'adresse par défaut si Python ne reconnaît pas l'exportateur
+            txt_exp = "<b>EXPORTER:</b><br/>LUC BELAIRE INTERNATIONAL, LTD<br/>DUBLIN, IRELAND"
+            
+            # Si le nom de l'exportateur contient un de ces mots, l'adresse change :
+            if "FRANCE" in exportateur or "SOVEREIGN" in exportateur:
+                txt_exp = "<b>EXPORTER:</b><br/>SOVEREIGN BRANDS FRANCE<br/>10 RUE DE LA LOGISTIQUE<br/>75000 PARIS, FRANCE"
+            elif "USA" in exportateur or "AMERICA" in exportateur:
+                txt_exp = "<b>EXPORTER:</b><br/>SOVEREIGN BRANDS USA<br/>123 BROADWAY AVE<br/>NEW YORK, NY 10001, USA"
+            # Ajoutez autant de "elif" que vous le souhaitez !
+            # ==============================================================
+
+            # Bloc Consignee dynamique (ajoute la ligne seulement si elle existe)
+            consignee_lines = [f"<b>CONSIGNEE:</b><br/>{safe_xml(client)}"]
+            if adresse: consignee_lines.append(safe_xml(adresse))
+            if ville: consignee_lines.append(safe_xml(ville))
+            if pays: consignee_lines.append(safe_xml(pays))
+            txt_con = "<br/>".join(consignee_lines)
             
             pdf_buffer = io.BytesIO()
             doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, margin=1.2*cm)
@@ -143,18 +166,13 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             style_header = ParagraphStyle('H', parent=styles['Normal'], fontSize=9, leading=11)
             style_title = ParagraphStyle('T', parent=styles['Title'], fontSize=22, alignment=2)
 
-            # En-tête (Ligne noire de 18.5 cm parfaitement alignée sur le tableau)
             elements.append(Paragraph("PACKING LIST", style_title))
             elements.append(HRFlowable(width=18.5*cm, thickness=1.5, color=colors.black, spaceAfter=15, hAlign='CENTER'))
 
-            # Adresses
-            txt_exp = "<b>EXPORTER:</b><br/>LUC BELAIRE INTERNATIONAL, LTD<br/>DUBLIN, IRELAND"
-            txt_con = f"<b>CONSIGNEE:</b><br/>{safe_xml(client)}"
             t_adr = Table([[Paragraph(txt_exp, style_header), "", Paragraph(txt_con, style_header)]], colWidths=[8.5*cm, 1.5*cm, 8.5*cm])
             t_adr.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'), ('BOTTOMPADDING',(0,0),(-1,-1), 15)]))
             elements.append(t_adr)
 
-            # Tableau
             headers = ['SKU / REF', 'CASES (COLIS)', 'UNIT QTY', 'DESCRIPTION']
             data = [headers]
             
@@ -165,7 +183,6 @@ def generer_packing_lists_zip(df_resultats, dict_details):
                 art = str(row['Article'])
                 qte = int(row['Qte_Demandée'])
                 
-                # Récupération sécurisée
                 d = dict_details.get(art, {
                     'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '',
                     'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0
@@ -186,7 +203,6 @@ def generer_packing_lists_zip(df_resultats, dict_details):
                 t_p += poids_ligne
                 t_pal += palettes_ligne
                 
-                # Construction du bloc Description Rich Text (HTML)
                 desc_html = f"<b>{safe_xml(d['libelle'])}</b><br/>"
                 
                 sub1 = []
@@ -220,7 +236,6 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             ]))
             elements.append(t_art)
 
-            # Récapitulatif sans arrondis inutiles
             elements.append(Spacer(1, 20))
             t_pal_int = int(math.ceil(t_pal)) 
             
@@ -239,7 +254,6 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             ]))
             elements.append(t_tot)
 
-            # Signature
             elements.append(Spacer(1, 40))
             elements.append(Paragraph("________________________________<br/>Authorized Signature & Stamp", styles['Normal']))
 
@@ -252,9 +266,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V24")
-st.title("📦 Portail de Disponibilité - VERSION 24 🔴")
-st.write("Scan Multi-Onglets, Précision Poids, et Mise en page ajustée.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V25")
+st.title("📦 Portail de Disponibilité - VERSION 25 🔴")
+st.write("Aspirateur d'adresses et Aiguilleur d'Exportateurs intégrés.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -283,9 +297,9 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V25)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Calcul et génération PDF pro en cours...'):
+        with st.spinner('Analyse et extraction des adresses en cours...'):
             try:
                 # --- A. LECTURE NOMENCLATURE ---
                 dict_prepa = {}
@@ -301,7 +315,6 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                     c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
                     c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
                     c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
-                    
                     c_poids = next((c for c in ['POIDSBTLLES', 'POIDS', 'WEIGHT'] if c in df_nom_brut.columns), None)
                     c_pal_type = next((c for c in ['PALETTE', 'TYPEPALETTE'] if c in df_nom_brut.columns), None)
                     c_cas_pal = next((c for c in ['UAUEMAX', 'PAL', 'CASESPERPALLET'] if c in df_nom_brut.columns), None)
@@ -315,7 +328,6 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                         for _, r in df_nom_brut.iterrows():
                             art_id = str(r['CLEAN_ART'])
                             prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
-                            
                             if prepa_id and prepa_id != "0" and prepa_id != "NAN" and prepa_id != art_id:
                                 dict_prepa[art_id] = prepa_id
                                 
@@ -336,7 +348,6 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                 st.session_state['df_stock_brut'] = df_stock_brut.copy() 
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
                 col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'STOCKDISPONIBLE', 'QTESTOCK', 'QUANTITE', 'STOCK', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_stock_brut.columns), None)
                 
@@ -360,7 +371,6 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                     df_prod_brut_total = pd.concat([df_prod_brut_total, df_temp_copy], ignore_index=True)
 
                     df_temp.columns = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    
                     col_art_prod = next((c for c in ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_temp.columns), None)
                     col_qte_prod = next((c for c in ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_temp.columns), None)
                     
@@ -393,15 +403,22 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                 df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
                 productions_futures = df_production_valide.to_dict('records')
 
-                # --- D. LECTURE COMMANDES ---
+                # --- D. LECTURE COMMANDES (NOUVEAU : Extraction Adresses complètes) ---
                 df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd)
-                df_commandes_brut.columns = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                df_commandes_brut.columns = colonnes_cmd
                 
-                col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in df_commandes_brut.columns), None)
-                col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in df_commandes_brut.columns), None)
-                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in df_commandes_brut.columns), None)
-                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in df_commandes_brut.columns), None)
-                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in df_commandes_brut.columns), None)
+                col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
+                col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
+                col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None)
+                col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
+                col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None)
+                
+                # Nouveaux champs pour l'adresse et l'exportateur
+                col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
+                col_ville = next((c for c in colonnes_cmd if 'VILLE' in c or 'CITY' in c), None)
+                col_pays = next((c for c in colonnes_cmd if 'PAYS' in c or 'COUNTRY' in c), None)
+                col_exportateur = next((c for c in colonnes_cmd if 'EXPORT' in c or 'SOCIETE' in c or 'FILIALE' in c or 'STEAPP' in c), None)
                 
                 df_commandes = pd.DataFrame()
                 df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
@@ -409,8 +426,14 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                 df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
                 df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
                 df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
-                df_commandes['URGENCE'] = 0
                 
+                # Enregistrement des données d'adresse
+                df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
+                df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
+                df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
+                df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
+                
+                df_commandes['URGENCE'] = 0
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
                 df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
 
@@ -470,6 +493,10 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
                     resultats.append({
                         'Num_Commande': commande['NUM_CDE'],
                         'Client': commande['CLIENT'],
+                        'Adresse': commande['ADRESSE'],
+                        'Ville': commande['VILLE'],
+                        'Pays': commande['PAYS'],
+                        'Exportateur': commande['EXPORTATEUR'],
                         'Article': article,
                         'Qte_Demandée': int(commande['QUANTITE']),
                         'Tiré_Stock': int(qte_prise_stock),
@@ -494,14 +521,16 @@ if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_cont
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
-    st.dataframe(st.session_state['df_final'], use_container_width=True)
+    # On cache les colonnes d'adresse techniques pour un affichage web plus propre
+    colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
+    st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
 
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V24.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V25.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -509,10 +538,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V24
+    # SCANNER GLOBAL V25
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V24")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V25")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
