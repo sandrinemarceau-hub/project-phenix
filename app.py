@@ -45,13 +45,11 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
     return s
 
-# NOUVEAU : Lecteur Universel V13 avec Auto-détection (sep=None)
 def lire_fichier(fichier, lignes_a_ignorer):
     nom = fichier.name.lower()
     fichier.seek(0)
     if nom.endswith('.csv'):
         try:
-            # sep=None force Pandas à deviner le séparateur (, ou ;) tout seul !
             return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=None, engine='python', encoding='utf-8')
         except:
             fichier.seek(0)
@@ -62,9 +60,9 @@ def lire_fichier(fichier, lignes_a_ignorer):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V13")
-st.title("📦 Portail de Disponibilité - VERSION 13 🔴")
-st.write("Le lecteur CSV intelligent à auto-détection est activé.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V14")
+st.title("📦 Portail de Disponibilité - VERSION 14 🔴")
+st.write("Export Excel ultra-détaillé activé (Statuts, quantités tirées sur stock/prod, manquants).")
 
 col1, col2, col3 = st.columns(3)
 
@@ -88,9 +86,9 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Lecture auto-détectée et calcul en cours...'):
+        with st.spinner('Calcul et génération du rapport détaillé en cours...'):
             try:
                 rapport = {}
 
@@ -103,7 +101,6 @@ if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_cont
                 
                 if not col_art_stock:
                     st.error("❌ Erreur STOCK : La colonne Code Article est introuvable.")
-                    st.info(f"🔍 Colonnes lues par l'outil : {df_stock_brut.columns.tolist()}")
                     st.stop()
 
                 df_stock = pd.DataFrame()
@@ -174,7 +171,6 @@ if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_cont
                 
                 rapport['prod_initiales'] = lignes_prod_initiales
                 rapport['prod_valides'] = len(df_production_valide)
-                rapport['prod_ignorees'] = lignes_prod_initiales - len(df_production_valide)
 
                 df_production_valide['Date_Dispo_Reelle'] = df_production_valide['DATE_PROD'] + timedelta(days=2)
                 df_production_valide = df_production_valide.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
@@ -203,45 +199,63 @@ if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_cont
                 df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
                 df_commandes['URGENCE'] = pd.to_numeric(df_commandes_brut[col_urgence], errors='coerce').fillna(0) if col_urgence else 0
                 
-                lignes_cmd_initiales = len(df_commandes)
                 df_commandes = df_commandes.dropna(subset=['DATE_CDE'])
                 rapport['cmd_valides'] = len(df_commandes)
                 
                 df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
 
-                # --- D. ALGORITHME D'ATTRIBUTION ---
+                # --- D. ALGORITHME D'ATTRIBUTION (Version Détaillée) ---
                 resultats = []
                 for index, commande in df_commandes.iterrows():
                     article = commande['ARTICLE_CODE']
                     qte_demandee = commande['QUANTITE']
                     qte_restante = qte_demandee
-                    date_dispo = "Immédiate (En Stock)"
                     
+                    # Nouveaux compteurs pour l'export
+                    qte_prise_stock = 0
+                    qte_prise_prod = 0
+                    
+                    date_dispo = "Immédiate"
+                    statut = "En Stock"
+                    
+                    # 1. Taper dans le stock
                     stock_dispo = stock_actuel.get(article, 0)
                     if stock_dispo > 0:
-                        qte_prise = min(stock_dispo, qte_restante)
-                        stock_actuel[article] -= qte_prise
-                        qte_restante -= qte_prise
+                        qte_prise_stock = min(stock_dispo, qte_restante)
+                        stock_actuel[article] -= qte_prise_stock
+                        qte_restante -= qte_prise_stock
                         
+                    # 2. Taper dans la prod
                     if qte_restante > 0:
                         date_dispo = None
                         for prod in productions_futures:
                             if prod['ARTICLE'] == article and prod['QTE_PRODUITE'] > 0:
-                                qte_prise = min(prod['QTE_PRODUITE'], qte_restante)
-                                prod['QTE_PRODUITE'] -= qte_prise
-                                qte_restante -= qte_prise
+                                prise_actuelle = min(prod['QTE_PRODUITE'], qte_restante)
+                                prod['QTE_PRODUITE'] -= prise_actuelle
+                                qte_prise_prod += prise_actuelle
+                                qte_restante -= prise_actuelle
+                                
                                 if qte_restante == 0:
                                     date_dispo = prod['Date_Dispo_Reelle'].strftime('%d/%m/%Y')
+                                    statut = "Attente Prod"
                                     break
                                     
+                    # 3. Analyse finale de la ligne
                     if qte_restante > 0:
-                        date_dispo = f"⚠️ Manque {int(qte_restante)} unités"
+                        statut = "Rupture"
+                        date_dispo = "Pas de date"
                         
                     resultats.append({
                         'Num_Commande': commande['NUM_CDE'],
-                        'Article': article,
+                        'Date_Commande': commande['DATE_CDE'].strftime('%d/%m/%Y'),
+                        'Urgence': commande['URGENCE'],
                         'Client': commande['CLIENT'],
-                        'Quantité': qte_demandee,
+                        'Article': article,
+                        'Qte_Demandée': int(qte_demandee),
+                        'Tiré_Stock': int(qte_prise_stock),
+                        'Tiré_Prod': int(qte_prise_prod),
+                        'Manquant': int(qte_restante),
+                        'Statut': statut,
                         'Date_Disponibilité': date_dispo
                     })
 
@@ -259,7 +273,7 @@ if st.button("🚀 Calculer les disponibilités (V13)", type="primary", use_cont
 # 4. AFFICHAGE DES RÉSULTATS
 # ==========================================
 if st.session_state['calcul_ok']:
-    st.success("✅ Calcul terminé avec succès !")
+    st.success("✅ Calcul et rapport détaillé terminés !")
     
     rapport = st.session_state['rapport']
     with st.expander("📊 Voir le rapport de lecture des données", expanded=False):
@@ -271,21 +285,21 @@ if st.session_state['calcul_ok']:
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Dispos')
+        st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse_Detaillee')
     
     st.download_button(
-        label="📥 Télécharger le fichier des disponibilités",
+        label="📥 Télécharger l'Analyse Excel Détaillée",
         data=buffer,
-        file_name="Commandes_Disponibles.xlsx",
+        file_name="Commandes_Analyse_Detaillee.xlsx",
         mime="application/vnd.ms-excel",
         type="primary"
     )
 
     # ==========================================
-    # SCANNER GLOBAL V13
+    # SCANNER GLOBAL V14
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V13")
+    st.subheader("🕵️‍♂️ Scanner Global V14")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
