@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V28")
-st.title("📦 Portail de Disponibilité - VERSION 28 🔴")
-st.write("Radar à dates MGC/RIVA et Mode Diagnostic activés.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V29")
+st.title("📦 Portail de Disponibilité - VERSION 29 🔴")
+st.write("Correction de priorité : Ciblage du 'Reste à faire' avant les 'Entrées'.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,11 +288,10 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V28)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V29)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse et extraction en cours...'):
             try:
-                # Stockage des diagnostics
                 log_diagnostic = []
                 
                 # --- A. LECTURE NOMENCLATURES MULTIPLES ---
@@ -379,7 +378,7 @@ if st.button("🚀 Calculer les disponibilités (V28)", type="primary", use_cont
                 df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
-                # --- C. LECTURE PRODUCTION ---
+                # --- C. LECTURE PRODUCTION (INVERSION DES PRIORITÉS EN V29) ---
                 liste_prod = []
                 df_prod_brut_total = pd.DataFrame() 
 
@@ -392,13 +391,14 @@ if st.button("🚀 Calculer les disponibilités (V28)", type="primary", use_cont
                     colonnes_temp = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                     df_temp.columns = colonnes_temp
                     
-                    liste_articles_prod = ['ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
-                    liste_qtes_prod = ['QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL', 'QTEPREVUE', 'QUANTITEPREVUE', 'RESTEAFAIRE', 'QTEFABRIQUEE', 'RESTE', 'AFAIRE']
+                    # V29 : L'Article final en priorité absolue avant l'Article d'Entrée
+                    liste_articles_prod = ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'REFERENCE', 'CODE', 'ARTICLECODEAE', 'CODEARTENTREE', 'ARTENTREE', 'ARTPREPA', 'CODEPREPA', 'PRODUIT']
+                    # V29 : Le Reste A Faire en priorité absolue avant les Entrées
+                    liste_qtes_prod = ['RESTEAFAIRE', 'RESTE', 'AFAIRE', 'QTEPREVUE', 'QUANTITEPREVUE', 'QUANTITE', 'QTE', 'QTEAE', 'QTEARTENTREE', 'QTEENTREE', 'QTEFABRIQUEE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL']
                     
                     col_art_prod = next((c for c in liste_articles_prod if c in colonnes_temp), None)
                     col_qte_prod = next((c for c in liste_qtes_prod if c in colonnes_temp), None)
                     
-                    # NOUVEAU : Radar à Dates V28
                     mots_cles_dates = ['DATE', 'ECHEANCE', 'FIN', 'LIVRAISON', 'DISPO', 'BESOIN', 'REALISATION', 'PLANIF', 'DELAI']
                     colonnes_dates_potentielles = [c for c in colonnes_temp if any(mot in c for mot in mots_cles_dates)]
                     
@@ -557,12 +557,11 @@ if st.button("🚀 Calculer les disponibilités (V28)", type="primary", use_cont
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
     
-    # --- NOUVEAU : Le Mode Diagnostic ---
     with st.expander("🛠️ Mode Diagnostic (Voir ce que Python a lu dans vos usines)"):
         st.write("Voici comment Python a interprété vos fichiers de Production :")
         for log in st.session_state.get('log_diagnostic', []):
             st.write(log)
-        st.write("*Si la date indique 'Aucune', cela signifie que l'outil a dû ignorer la ligne faute de trouver une date ou une quantité positive.*")
+        st.write("*Ordre de priorité V29 : ARTICLE avant ENTREE / RESTE A FAIRE avant ENTREE.*")
 
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
@@ -572,7 +571,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V28.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V29.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -580,10 +579,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V28
+    # SCANNER GLOBAL V29
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V28")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V29")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
