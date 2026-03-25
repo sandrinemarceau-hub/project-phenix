@@ -86,6 +86,13 @@ def clean_nan(val, default=""):
         return default
     return str(val).strip()
 
+def format_num(val):
+    if not isinstance(val, (int, float)): return val
+    s = f"{val:.4f}".rstrip('0')
+    if s.endswith('.'): s = s[:-1]
+    return s if s else "0"
+
+# LECTEUR MULTI-ONGLETS INTELLIGENT
 def lire_fichier(fichier, lignes_a_ignorer):
     nom = fichier.name.lower()
     fichier.seek(0)
@@ -96,9 +103,28 @@ def lire_fichier(fichier, lignes_a_ignorer):
             fichier.seek(0)
             return pd.read_csv(fichier, skiprows=lignes_a_ignorer, sep=None, engine='python', encoding='latin-1')
     else:
-        return pd.read_excel(fichier, skiprows=lignes_a_ignorer)
+        xls = pd.ExcelFile(fichier)
+        best_df = None
+        max_score = -1
+        # Mots-clés pour repérer la vraie nomenclature
+        mots_cles = ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE', 'QUANTITE', 'QTE', 'STOCK', 'POIDS', 'LIBELLE', 'PALETTE', 'FORMAT', 'UAUEMAX', 'STOCKPHYSIQUE']
+        
+        for sheet in xls.sheet_names:
+            try:
+                df_temp = pd.read_excel(xls, sheet_name=sheet, skiprows=lignes_a_ignorer)
+                cols = df_temp.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
+                score = sum(1 for c in cols for m in mots_cles if m in c)
+                if score > max_score:
+                    max_score = score
+                    best_df = df_temp
+            except:
+                pass
+        
+        if best_df is not None:
+            return best_df
+        return pd.read_excel(xls, sheet_name=0, skiprows=lignes_a_ignorer)
 
-# --- GÉNÉRATEUR PACKING LISTS REPORTLAB (VERSION ULTRA DÉTAILLÉE) ---
+# --- GÉNÉRATEUR PACKING LISTS REPORTLAB (VERSION 24) ---
 def generer_packing_lists_zip(df_resultats, dict_details):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
@@ -117,9 +143,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             style_header = ParagraphStyle('H', parent=styles['Normal'], fontSize=9, leading=11)
             style_title = ParagraphStyle('T', parent=styles['Title'], fontSize=22, alignment=2)
 
-            # En-tête
+            # En-tête (Ligne noire de 18.5 cm parfaitement alignée sur le tableau)
             elements.append(Paragraph("PACKING LIST", style_title))
-            elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.black, spaceAfter=15))
+            elements.append(HRFlowable(width=18.5*cm, thickness=1.5, color=colors.black, spaceAfter=15, hAlign='CENTER'))
 
             # Adresses
             txt_exp = "<b>EXPORTER:</b><br/>LUC BELAIRE INTERNATIONAL, LTD<br/>DUBLIN, IRELAND"
@@ -129,7 +155,7 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             elements.append(t_adr)
 
             # Tableau
-            headers = ['SKU / REF', 'DESCRIPTION DU PRODUIT', 'CASES', 'UNIT QTY']
+            headers = ['SKU / REF', 'CASES (COLIS)', 'UNIT QTY', 'DESCRIPTION']
             data = [headers]
             
             t_q, t_c, t_p, t_pal = 0, 0, 0.0, 0.0
@@ -139,10 +165,10 @@ def generer_packing_lists_zip(df_resultats, dict_details):
                 art = str(row['Article'])
                 qte = int(row['Qte_Demandée'])
                 
-                # Récupération des détails (avec valeurs par défaut sécures)
+                # Récupération sécurisée
                 d = dict_details.get(art, {
                     'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '',
-                    'uc': 6.0, 'poids': 1.5, 'type_pal': 'N/A', 'cas_pal': 100.0
+                    'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0
                 })
                 
                 uc = d['uc'] if d['uc'] > 0 else 6.0
@@ -172,22 +198,21 @@ def generer_packing_lists_zip(df_resultats, dict_details):
                 sub2 = []
                 sub2.append(f"Carton: {int(uc)} btls")
                 sub2.append(f"Palette: {int(cas_pal)} ctns")
-                sub2.append(f"Poids: {d['poids']} kg/btl")
+                if d['poids'] > 0: sub2.append(f"Poids: {format_num(d['poids'])} kg/btl")
                 desc_html += f"<font color='#666666'>{' | '.join(sub2)}</font>"
                 
                 data.append([
                     safe_xml(art),
-                    Paragraph(desc_html, style_desc),
                     str(cartons),
-                    str(int(qte))
+                    str(int(qte)),
+                    Paragraph(desc_html, style_desc)
                 ])
 
-            t_art = Table(data, colWidths=[2.5*cm, 10.5*cm, 2.5*cm, 3*cm], repeatRows=1)
+            t_art = Table(data, colWidths=[3*cm, 3*cm, 3*cm, 9.5*cm], repeatRows=1)
             t_art.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.black),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (0,-1), 'CENTER'), # Centre la réf
-                ('ALIGN', (2,0), (3,-1), 'CENTER'), # Centre les qtes
+                ('ALIGN', (0,0), (2,-1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ('GRID', (0,0), (-1,-1), 0.2, colors.grey),
                 ('TOPPADDING', (0,0), (-1,-1), 8),
@@ -195,12 +220,12 @@ def generer_packing_lists_zip(df_resultats, dict_details):
             ]))
             elements.append(t_art)
 
-            # Récapitulatif
+            # Récapitulatif sans arrondis inutiles
             elements.append(Spacer(1, 20))
             t_pal_int = int(math.ceil(t_pal)) 
             
             tot_data = [
-                [f"TOTAL UNITS: {int(t_q)}", f"TOTAL WEIGHT: {t_p:.2f} kg"],
+                [f"TOTAL UNITS: {int(t_q)}", f"TOTAL WEIGHT: {format_num(t_p)} kg"],
                 [f"TOTAL CASES: {int(t_c)}", f"TOTAL PALLETS: {t_pal_int} ({type_pal_label})"],
             ]
             t_tot = Table(tot_data, colWidths=[9*cm, 9.5*cm])
@@ -227,9 +252,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V23")
-st.title("📦 Portail de Disponibilité - VERSION 23 🔴")
-st.write("Générateur PDF V2 : Descriptions techniques intégrées (Format, Degré, Couleur, Logistique).")
+st.set_page_config(layout="wide", page_title="Portail Logistique V24")
+st.title("📦 Portail de Disponibilité - VERSION 24 🔴")
+st.write("Scan Multi-Onglets, Précision Poids, et Mise en page ajustée.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -258,7 +283,7 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V23)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V24)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Calcul et génération PDF pro en cours...'):
             try:
@@ -273,15 +298,13 @@ if st.button("🚀 Calculer les disponibilités (V23)", type="primary", use_cont
                     
                     c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
                     c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE'] if c in df_nom_brut.columns), None)
-                    c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE'] if c in df_nom_brut.columns), None)
+                    c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
                     c_fmt = next((c for c in ['FORMAT'] if c in df_nom_brut.columns), None)
                     c_uc = next((c for c in ['UCUA', 'UC', 'PCB'] if c in df_nom_brut.columns), None)
                     
                     c_poids = next((c for c in ['POIDSBTLLES', 'POIDS', 'WEIGHT'] if c in df_nom_brut.columns), None)
                     c_pal_type = next((c for c in ['PALETTE', 'TYPEPALETTE'] if c in df_nom_brut.columns), None)
                     c_cas_pal = next((c for c in ['UAUEMAX', 'PAL', 'CASESPERPALLET'] if c in df_nom_brut.columns), None)
-                    
-                    # Nouveautés V23
                     c_degres = next((c for c in ['DEGRES', 'DEGRE'] if c in df_nom_brut.columns), None)
                     c_couleur = next((c for c in ['COULEUR', 'COLOR'] if c in df_nom_brut.columns), None)
                     
@@ -302,7 +325,7 @@ if st.button("🚀 Calculer les disponibilités (V23)", type="primary", use_cont
                                 'degres': clean_nan(r[c_degres], "") if c_degres else "",
                                 'couleur': clean_nan(r[c_couleur], "") if c_couleur else "",
                                 'uc': float(nettoyage_quantite(pd.Series([r[c_uc]]))[0]) if c_uc else 6.0,
-                                'poids': float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]) if c_poids else 1.5,
+                                'poids': float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]) if c_poids else 0.0,
                                 'type_pal': clean_nan(r[c_pal_type], "N/A") if c_pal_type else "N/A",
                                 'cas_pal': float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]) if c_cas_pal else 100.0
                             }
@@ -478,7 +501,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V23.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V24.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -486,10 +509,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V23
+    # SCANNER GLOBAL V24
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Absolu V23")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V24")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
