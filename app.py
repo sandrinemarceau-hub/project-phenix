@@ -257,9 +257,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V34")
-st.title("📦 Portail de Disponibilité - VERSION 34 🔴")
-st.write("Verrouillage de l'Arbre Généalogique. Le bug '105' est éliminé !")
+st.set_page_config(layout="wide", page_title="Portail Logistique V35")
+st.title("📦 Portail de Disponibilité - VERSION 35 🔴")
+st.write("Mémoire Dynamique : Le fichier Actif Production écrase toujours les données obsolètes.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -288,9 +288,9 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V34)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V35)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Analyse, extraction et chaînage généalogique blindé...'):
+        with st.spinner('Analyse, extraction et chaînage généalogique dynamique...'):
             try:
                 log_diagnostic = []
                 
@@ -306,7 +306,6 @@ if st.button("🚀 Calculer les disponibilités (V34)", type="primary", use_cont
                         df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                         
                         c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
-                        # V34 : On retire PRODUITDEBASECODE pour éviter le faux lien vers '105'
                         c_prepa = next((c for c in ['ARTPREPA', 'CODEPREPA', 'COMPOSANT'] if c in df_nom_brut.columns), None)
                         
                         c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE', 'DESCRIPTION', 'DESCRIPTIONARTICLE'] if c in df_nom_brut.columns), None)
@@ -326,11 +325,9 @@ if st.button("🚀 Calculer les disponibilités (V34)", type="primary", use_cont
                                 art_id = str(r['CLEAN_ART'])
                                 prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
                                 
-                                # V34 : On sécurise l'ajout dans le dictionnaire
-                                if prepa_id and prepa_id not in ["0", "NAN", "NONE", "105", art_id]:
-                                    # S'il n'y a pas encore de lien, on l'ajoute. (On n'écrase jamais un bon lien).
-                                    if art_id not in dict_prepa:
-                                        dict_prepa[art_id] = prepa_id
+                                # V35 : LE SECRET EST ICI. On écrase toujours l'ancienne donnée !
+                                if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]:
+                                    dict_prepa[art_id] = prepa_id
                                 
                                 if art_id not in dict_details:
                                     dict_details[art_id] = {
@@ -596,7 +593,7 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V34.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V35.xlsx", type="primary")
 
     with c_btn2:
         if REPORTLAB_OK:
@@ -604,10 +601,10 @@ if st.session_state['calcul_ok']:
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
 
     # ==========================================
-    # SCANNER GLOBAL V34
+    # SCANNER GLOBAL V35
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V34")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V35")
     st.write("Tapez un code article pour voir tous ses composants de préparation !")
     recherche = st.text_input("Tapez votre numéro (ex: 85633, 43754) et appuyez sur Entrée :")
     
