@@ -60,9 +60,9 @@ def lire_fichier(fichier, lignes_a_ignorer):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V14")
-st.title("📦 Portail de Disponibilité - VERSION 14 🔴")
-st.write("Export Excel ultra-détaillé activé (Statuts, quantités tirées sur stock/prod, manquants).")
+st.set_page_config(layout="wide", page_title="Portail Logistique V15")
+st.title("📦 Portail de Disponibilité - VERSION 15 🔴")
+st.write("Correction des espaces de milliers sur les quantités activée.")
 
 col1, col2, col3 = st.columns(3)
 
@@ -86,9 +86,9 @@ with col3:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V15)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Calcul et génération du rapport détaillé en cours...'):
+        with st.spinner('Nettoyage des nombres et calcul en cours...'):
             try:
                 rapport = {}
 
@@ -105,7 +105,8 @@ if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_cont
 
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
-                df_stock['STOCK_DISPO'] = pd.to_numeric(df_stock_brut[col_qte_stock].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_stock else 0
+                # VERSION 15 : Destruction des espaces sur les grandes quantités
+                df_stock['STOCK_DISPO'] = pd.to_numeric(df_stock_brut[col_qte_stock].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_stock else 0
                 
                 stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
                 rapport['stock_lignes'] = len(df_stock)
@@ -129,7 +130,8 @@ if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_cont
                     if col_art_prod and col_qte_prod:
                         df_extracted = pd.DataFrame()
                         df_extracted['ARTICLE'] = nettoyage_extreme(df_temp[col_art_prod])
-                        df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+                        # VERSION 15 : Destruction des espaces
+                        df_extracted['QTE_PRODUITE'] = pd.to_numeric(df_temp[col_qte_prod].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0)
                         
                         date_series = None
                         colonnes_dates_possibles = ['DATEREALISATION', 'DATEPLANIF', 'DATEFIN', 'DATEPREVUE', 'ECHEANCE', 'DATE']
@@ -194,7 +196,8 @@ if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_cont
                 df_commandes = pd.DataFrame()
                 df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
                 df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
-                df_commandes['QUANTITE'] = pd.to_numeric(df_commandes_brut[col_qte_cmd].astype(str).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_cmd else 0
+                # VERSION 15 : Destruction des espaces
+                df_commandes['QUANTITE'] = pd.to_numeric(df_commandes_brut[col_qte_cmd].astype(str).str.replace(r'\s+', '', regex=True).str.replace(',', '.'), errors='coerce').fillna(0) if col_qte_cmd else 0
                 df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
                 df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
                 df_commandes['URGENCE'] = pd.to_numeric(df_commandes_brut[col_urgence], errors='coerce').fillna(0) if col_urgence else 0
@@ -204,14 +207,13 @@ if st.button("🚀 Calculer les disponibilités (V14)", type="primary", use_cont
                 
                 df_commandes = df_commandes.sort_values(by=['URGENCE', 'DATE_CDE'], ascending=[False, True])
 
-                # --- D. ALGORITHME D'ATTRIBUTION (Version Détaillée) ---
+                # --- D. ALGORITHME D'ATTRIBUTION ---
                 resultats = []
                 for index, commande in df_commandes.iterrows():
                     article = commande['ARTICLE_CODE']
                     qte_demandee = commande['QUANTITE']
                     qte_restante = qte_demandee
                     
-                    # Nouveaux compteurs pour l'export
                     qte_prise_stock = 0
                     qte_prise_prod = 0
                     
@@ -296,10 +298,10 @@ if st.session_state['calcul_ok']:
     )
 
     # ==========================================
-    # SCANNER GLOBAL V14
+    # SCANNER GLOBAL V15
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global V14")
+    st.subheader("🕵️‍♂️ Scanner Global V15")
     recherche = st.text_input("Tapez votre numéro (ex: 39586) et appuyez sur Entrée :")
     
     if recherche:
