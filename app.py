@@ -5,7 +5,7 @@ import io
 import zipfile
 import re
 
-# Tente de charger le module PDF. (Si absent, on avertira l'utilisateur)
+# Tente de charger le module PDF
 try:
     from fpdf import FPDF
     FPDF_OK = True
@@ -52,21 +52,22 @@ def nettoyage_extreme(serie):
     s = s.str.replace(r'\.0$', '', regex=True) 
     s = s.str.upper() 
     s = s.str.replace(r'[^A-Z0-9]', '', regex=True) 
+    s = s.str.lstrip('0') # V17 : Détruit les zéros initiaux (ex: 085633 -> 85633)
+    s = s.replace('', '0') # Sécurité si la case était juste un zéro
     return s
 
-# NOUVEAU : Broyeur de quantités universel (Gère les formats 1.200,50 ou 1,200.50 ou 1 200,50)
 def nettoyage_quantite(serie):
     def clean_val(x):
-        x = str(x).replace(' ', '').replace('\xa0', '') # Enlève tous les types d'espaces
+        x = str(x).replace(' ', '').replace('\xa0', '') 
         if ',' in x and '.' in x:
             if x.rfind(',') > x.rfind('.'):
-                x = x.replace('.', '').replace(',', '.') # Format FR: 1.200,50 -> 1200.50
+                x = x.replace('.', '').replace(',', '.') 
             else:
-                x = x.replace(',', '') # Format US: 1,200.50 -> 1200.50
+                x = x.replace(',', '') 
         else:
-            x = x.replace(',', '.') # S'il y a juste une virgule, ça devient un point
+            x = x.replace(',', '.') 
             
-        x = re.sub(r'[^\d.-]', '', x) # Détruit les lettres ou symboles restants (ex: €, kg)
+        x = re.sub(r'[^\d.-]', '', x) 
         try:
             return float(x)
         except:
@@ -88,7 +89,6 @@ def lire_fichier(fichier, lignes_a_ignorer):
     else:
         return pd.read_excel(fichier, skiprows=lignes_a_ignorer)
 
-# Générateur de Packing Lists
 def generer_packing_lists_zip(df_resultats, dict_details):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
@@ -123,7 +123,7 @@ def generer_packing_lists_zip(df_resultats, dict_details):
                 libelle = details['libelle'][:45]
                 fmt = details['format'][:15]
                 uc = details['uc']
-                if pd.isna(uc) or uc == 0: uc = 6
+                if pd.isna(uc) or uc <= 0: uc = 6
                 cartons = int(qte / uc) if qte > 0 else 0
                 
                 pdf.cell(25, 8, clean_text_pdf(art), 1)
@@ -143,9 +143,9 @@ def generer_packing_lists_zip(df_resultats, dict_details):
 # ==========================================
 # 2. INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V16.2")
-st.title("📦 Portail de Disponibilité - VERSION 16.2 🔴")
-st.write("Le Super Détective (Scanner Omniscient) et le Broyeur de Quantités sont activés !")
+st.set_page_config(layout="wide", page_title="Portail Logistique V17")
+st.title("📦 Portail de Disponibilité - VERSION 17 🔴")
+st.write("Destructeur de zéros initiaux et Scanner Absolu activés.")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -166,7 +166,7 @@ with col3:
 
 with col4:
     st.subheader("4. Nomenclature")
-    fichier_nom = st.file_uploader("Fichier Nomencl. (Optionnel)", type=['xlsx', 'xls', 'csv'])
+    fichier_nom = st.file_uploader("Fichier Nomencl.", type=['xlsx', 'xls', 'csv'])
     skip_nom = st.number_input("Ignorer (Nom.)", min_value=0, value=0)
 
 # ==========================================
@@ -174,19 +174,18 @@ with col4:
 # ==========================================
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V17)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
-        with st.spinner('Nettoyage des nombres et chaînage en cours...'):
+        with st.spinner('Nettoyage profond et chaînage en cours...'):
             try:
                 # --- A. LECTURE NOMENCLATURE ---
                 dict_prepa = {}
                 dict_details = {}
                 if fichier_nom:
                     df_nom_brut = lire_fichier(fichier_nom, skip_nom)
-                    st.session_state['df_nom_brut'] = df_nom_brut.copy() # Sauvegarde pour le Scanner Omniscient
+                    st.session_state['df_nom_brut'] = df_nom_brut.copy() 
                     
                     df_nom_brut.columns = df_nom_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
-                    
                     c_art = next((c for c in ['ARTICLECODE', 'CODEARTICLE'] if c in df_nom_brut.columns), None)
                     c_prepa = next((c for c in ['ARTPREPA', 'PRODUITDEBASECODE'] if c in df_nom_brut.columns), None)
                     c_lib = next((c for c in ['ARTICLELIBELLE', 'LIBELLE'] if c in df_nom_brut.columns), None)
@@ -201,7 +200,7 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
                             art_id = str(r['CLEAN_ART'])
                             prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
                             
-                            if prepa_id and prepa_id != "NAN" and prepa_id != art_id:
+                            if prepa_id and prepa_id != "0" and prepa_id != "NAN" and prepa_id != art_id:
                                 dict_prepa[art_id] = prepa_id
                                 
                             dict_details[art_id] = {
@@ -213,7 +212,7 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
 
                 # --- B. LECTURE STOCK ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
-                st.session_state['df_stock_brut'] = df_stock_brut.copy() # Sauvegarde pour le Scanner Omniscient
+                st.session_state['df_stock_brut'] = df_stock_brut.copy() 
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE'] if c in df_stock_brut.columns), None)
@@ -300,7 +299,6 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
                     
                     def consommer(code_a_chercher, qte_a_trouver):
                         q_stk, q_prd = 0, 0
-                        # 1. Tirer dans le Stock
                         s = stock_actuel.get(code_a_chercher, 0)
                         if s > 0:
                             prise = min(s, qte_a_trouver)
@@ -308,7 +306,6 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
                             q_stk += prise
                             qte_a_trouver -= prise
                             
-                        # 2. Tirer dans la Prod
                         if qte_a_trouver > 0:
                             for prod in productions_futures:
                                 if prod['ARTICLE'] == code_a_chercher and prod['QTE_PRODUITE'] > 0:
@@ -320,12 +317,10 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
                                     if qte_a_trouver == 0: break
                         return q_stk, q_prd, qte_a_trouver
 
-                    # Essai N°1 : Code Client exact
                     qs1, qp1, qte_restante = consommer(article, qte_restante)
                     qte_prise_stock += qs1
                     qte_prise_prod += qp1
                     
-                    # Essai N°2 : Code de Base (Le Chaînage Nomenclature)
                     utilise_prepa = "Non"
                     if qte_restante > 0 and article in dict_prepa:
                         prepa = dict_prepa[article]
@@ -372,7 +367,6 @@ if st.button("🚀 Calculer les disponibilités (V16.2)", type="primary", use_co
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
-    
     st.dataframe(st.session_state['df_final'], use_container_width=True)
 
     c_btn1, c_btn2 = st.columns(2)
@@ -380,43 +374,43 @@ if st.session_state['calcul_ok']:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V16_2.xlsx", type="primary")
+        st.download_button("📥 Télécharger l'Excel Détaillé", data=buffer, file_name="Analyse_V17.xlsx", type="primary")
 
     with c_btn2:
         if FPDF_OK:
             zip_data = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
             st.download_button("📦 Télécharger les Packing Lists PDF (.zip)", data=zip_data, file_name="Packing_Lists.zip", type="secondary")
-        else:
-            st.warning("⚠️ Module 'fpdf' introuvable. Ajoutez-le à votre fichier requirements.txt.")
 
     # ==========================================
-    # SCANNER GLOBAL V16.2 (LE SUPER DÉTECTIVE)
+    # SCANNER GLOBAL V17
     # ==========================================
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global Omniscient V16.2")
-    st.write("Cet outil cherche simultanément votre numéro dans vos 3 fichiers pour comprendre d'où vient le blocage.")
+    st.subheader("🕵️‍♂️ Scanner Global Absolu V17")
     recherche = st.text_input("Tapez votre numéro (ex: 85633) et appuyez sur Entrée :")
     
     if recherche:
-        recherche = str(recherche).strip().upper()
+        rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
+        col_s1, col_s2, col_s3 = st.columns(3)
         
-        col_scan1, col_scan2, col_scan3 = st.columns(3)
-        
-        def afficher_resultats_scanner(df_nom_variable, titre, colonne_affichage):
-            if df_nom_variable in st.session_state:
-                df = st.session_state[df_nom_variable]
-                mask = df.astype(str).apply(lambda x: x.str.contains(recherche, case=False, na=False))
-                res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
+        def display_scan(df_name, title, col):
+            if df_name in st.session_state:
+                df = st.session_state[df_name]
+                def match_cell(val):
+                    val_c = re.sub(r'[^A-Z0-9]', '', str(val).upper().replace('.0', '')).lstrip('0')
+                    return rech_clean in val_c if rech_clean else False
                 
-                colonne_affichage.write(f"**{titre} : {len(res)} ligne(s)**")
+                mask = df.applymap(match_cell)
+                res = df[mask.any(axis=1)].copy().dropna(axis=1, how='all')
+                col.write(f"**{title} : {len(res)} ligne(s)**")
                 if not res.empty:
+                    # Formate les dates
                     for c in res.columns:
                         if pd.api.types.is_datetime64_any_dtype(res[c]):
                             res[c] = res[c].dt.strftime('%d/%m/%Y')
-                    colonne_affichage.dataframe(res, use_container_width=True)
+                    col.dataframe(res, use_container_width=True)
                 else:
-                    colonne_affichage.info("Introuvable ici.")
+                    col.info("Introuvable.")
 
-        afficher_resultats_scanner('df_stock_brut', '📦 STOCK', col_scan1)
-        afficher_resultats_scanner('df_prod_brut', '🏭 PRODUCTION', col_scan2)
-        afficher_resultats_scanner('df_nom_brut', '🧠 NOMENCLATURE', col_scan3)
+        display_scan('df_stock_brut', '📦 STOCK', col_s1)
+        display_scan('df_prod_brut', '🏭 PRODUCTION', col_s2)
+        display_scan('df_nom_brut', '🧠 NOMENCLATURE', col_s3)
