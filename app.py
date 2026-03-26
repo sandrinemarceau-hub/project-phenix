@@ -425,9 +425,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details, app_settings):
 # ==========================================
 # INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V46")
-st.title("📦 Portail de Disponibilité - VERSION 46 🔴")
-st.write("Correction Stock Physique prioritaire & Paramètres PDF Modifiables.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V47")
+st.title("📦 Portail de Disponibilité - VERSION 47 🔴")
+st.write("Recherche agressive du Stock Physique et Mouchard de colonnes.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
@@ -437,7 +437,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V46)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V47)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
@@ -497,7 +497,7 @@ if st.button("🚀 Calculer les disponibilités (V46)", type="primary", use_cont
                 st.session_state['dict_details'] = dict_details
                 st.session_state['df_nom_brut'] = df_nom_scanner
 
-                # --- B. LECTURE STOCK (V46 : STOCK PHYSIQUE PRIORITAIRE) ---
+                # --- B. LECTURE STOCK (V47 : DÉTECTION AGRESSIVE PHYSIQUE) ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 mask_total = df_stock_brut.astype(str).apply(lambda x: x.str.contains('TOTAL', case=False, na=False)).any(axis=1)
                 df_stock_brut = df_stock_brut[~mask_total]
@@ -506,13 +506,18 @@ if st.button("🚀 Calculer les disponibilités (V46)", type="primary", use_cont
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                 
-                # V46 : Stock Physique mis en premier choix
-                col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'PHYSIQUE', 'STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
+                # 1. On cherche d'abord TOUTE colonne qui contient le mot PHYS ou PHYSIQUE
+                col_qte_stock = next((c for c in df_stock_brut.columns if 'PHYSIQUE' in c or 'PHYS' in c), None)
+                # 2. Si vraiment on ne trouve pas, on se rabat sur la liste classique
+                if not col_qte_stock:
+                    col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
                 
                 if not col_art_stock or not col_qte_stock: 
                     st.error("❌ Erreur STOCK : Colonnes introuvables.")
                     st.stop()
                 
+                log_diagnostic.append(f"📦 **Fichier Stock** : L'outil a choisi la colonne '{col_qte_stock}' pour lire les quantités.")
+
                 df_stock = pd.DataFrame()
                 df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
                 df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
@@ -691,6 +696,11 @@ if st.button("🚀 Calculer les disponibilités (V46)", type="primary", use_cont
 # ==========================================
 if st.session_state['calcul_ok']:
     st.success("✅ Calcul terminé avec succès !")
+    
+    with st.expander("🛠️ Mode Diagnostic Ultime (Vérifiez votre colonne Stock ici !)"):
+        for log in st.session_state.get('log_diagnostic', []):
+            st.write(log)
+            
     colonnes_a_afficher = [c for c in st.session_state['df_final'].columns if c not in ['Adresse', 'Ville', 'Pays', 'Exportateur']]
     st.dataframe(st.session_state['df_final'][colonnes_a_afficher], use_container_width=True)
 
@@ -698,21 +708,20 @@ if st.session_state['calcul_ok']:
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V46.xlsx", type="primary", use_container_width=True)
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V47.xlsx", type="primary", use_container_width=True)
     with c_btn2:
         if REPORTLAB_OK:
             zip_pack = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
             st.download_button("📦 Packing Lists (PDF)", data=zip_pack, file_name="Packing_Lists.zip", type="secondary", use_container_width=True)
     with c_btn3:
         if FPDF_OK:
-            # V46 : On passe les paramètres de la barre latérale au générateur de PDF
             zip_rdv = generer_rdv_documents_zip(st.session_state['df_final'], st.session_state['dict_details'], settings_pdf)
             st.download_button("📅 RDV Documents (PDF)", data=zip_rdv, file_name="RDV_Documents.zip", type="secondary", use_container_width=True)
         else:
             st.warning("Générateur RDV inactif (FPDF non installé).")
 
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V46")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V47")
     recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
