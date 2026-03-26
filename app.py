@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # CONFIGURATION ET SÉCURITÉ (DOUBLE FACE)
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Sovereign Brands")
+st.set_page_config(layout="wide", page_title="Sovereign Brands - Logistics Portal")
 
 if 'role' not in st.session_state:
     st.session_state['role'] = None
@@ -45,14 +45,19 @@ if st.session_state['role'] is None:
             st.session_state['role'] = 'client'
             st.rerun()
         else:
-            st.error("Mot de passe incorrect. Veuillez réessayer.")
+            st.error("Mot de passe incorrect. / Incorrect password.")
     st.stop()
 
 # --- BOUTON DÉCONNEXION ---
 with st.sidebar:
-    if st.button("🚪 Déconnexion"):
-        st.session_state.clear()
-        st.rerun()
+    if st.session_state['role'] == 'admin':
+        if st.button("🚪 Déconnexion"):
+            st.session_state.clear()
+            st.rerun()
+    elif st.session_state['role'] == 'client':
+        if st.button("🚪 Log Out"):
+            st.session_state.clear()
+            st.rerun()
     st.divider()
 
 # ==========================================
@@ -254,7 +259,7 @@ if st.session_state['role'] == 'admin':
         pdf_adresse_veuve = st.text_area("Adresse Enlèvement (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=100)
     settings_pdf = {'contact': pdf_contact, 'horaires': pdf_horaires, 'adresse_defaut': pdf_adresse_defaut, 'adresse_veuve': pdf_adresse_veuve}
 
-    st.title("🛠️ Back Office - V49 (Dashboard & Filtres)")
+    st.title("🛠️ Back Office - Mise à jour de la Base")
     st.write("Importez vos fichiers usine ici. Les résultats seront sauvegardés pour les clients.")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -398,15 +403,32 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V49
+# ESPACE CLIENT (FRONT OFFICE) - V50
 # ==========================================
 elif st.session_state['role'] == 'client':
-    st.title("🌐 Portail Suivi Commandes & Logistique")
-    st.write("Bienvenue sur votre espace. Vous trouverez ci-dessous la disponibilité de vos commandes en temps réel.")
     
+    # --- INJECTION CSS POUR RENDRE L'INTERFACE "AGRÉABLE" ET PRO ---
+    st.markdown("""
+        <style>
+            #MainMenu {visibility: hidden;} /* Cache le menu "hamburger" en haut à droite */
+            footer {visibility: hidden;} /* Cache le pied de page Streamlit */
+            header {visibility: hidden;} /* Cache la barre de navigation haute */
+            .block-container {padding-top: 2rem;} /* Remonte le contenu vers le haut */
+            div[data-testid="stMetricValue"] {font-size: 2.2rem; font-weight: bold;} /* Grossit les chiffres du Dashboard */
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.title("🌐 Sovereign Brands - Order Tracking Portal")
+    st.write("Welcome to your dedicated portal. Track the real-time availability of your orders below.")
+    
+    # --- RÉCUPÉRATION ET AFFICHAGE DE LA DATE DE MISE À JOUR ---
     if not os.path.exists('base_logistique.pkl'):
-        st.warning("⚠️ Aucune donnée n'est actuellement disponible. L'entrepôt n'a pas encore mis à jour la base d'aujourd'hui.")
+        st.warning("⚠️ No data available at the moment. The warehouse has not updated the database yet.")
         st.stop()
+    else:
+        mtime = os.path.getmtime('base_logistique.pkl')
+        dt_mtime = datetime.fromtimestamp(mtime).strftime('%B %d, %Y at %H:%M')
+        st.info(f"🔄 **Database last updated:** {dt_mtime}")
     
     try:
         cache = pd.read_pickle('base_logistique.pkl')
@@ -414,29 +436,29 @@ elif st.session_state['role'] == 'client':
         dict_details = cache['dict_details']
         settings_pdf = cache['settings_pdf']
     except Exception as e:
-        st.error("Erreur lors de la lecture de la base de données.")
+        st.error("Error reading the database. Please contact the administrator.")
         st.stop()
 
-    # --- 1. CALCUL DES KPIs ---
+    # --- 1. CALCUL DES KPIs EN ANGLAIS ---
     order_status_map = {}
     for cmd, grp in df_final.groupby('Num_Commande'):
         if str(cmd).upper() in ["INCONNU", "NAN"]: continue
         statuses = grp['Statut'].values
-        if 'Rupture' in statuses: order_status_map[cmd] = 'Rupture'
-        elif any('Attente Prod' in s for s in statuses): order_status_map[cmd] = 'Attente'
-        else: order_status_map[cmd] = 'Prêt'
+        if 'Rupture' in statuses: order_status_map[cmd] = 'Blocked'
+        elif any('Attente Prod' in s for s in statuses): order_status_map[cmd] = 'Pending'
+        else: order_status_map[cmd] = 'Ready'
             
     nb_total = len(order_status_map)
-    nb_pret = sum(1 for v in order_status_map.values() if v == 'Prêt')
-    nb_attente = sum(1 for v in order_status_map.values() if v == 'Attente')
-    nb_rupture = sum(1 for v in order_status_map.values() if v == 'Rupture')
+    nb_pret = sum(1 for v in order_status_map.values() if v == 'Ready')
+    nb_attente = sum(1 for v in order_status_map.values() if v == 'Pending')
+    nb_rupture = sum(1 for v in order_status_map.values() if v == 'Blocked')
 
-    st.subheader("📊 Tableau de Bord du Portefeuille")
+    st.subheader("📊 Portfolio Dashboard")
     col_k1, col_k2, col_k3, col_k4 = st.columns(4)
-    col_k1.metric("📦 Total Commandes", nb_total)
-    col_k2.metric("🟢 100% Prêtes (En Stock)", nb_pret)
-    col_k3.metric("⏳ En Attente Production", nb_attente)
-    col_k4.metric("🔴 Bloquées (Rupture)", nb_rupture)
+    col_k1.metric("📦 Total Orders", nb_total)
+    col_k2.metric("🟢 100% Ready (In Stock)", nb_pret)
+    col_k3.metric("⏳ Pending Production", nb_attente)
+    col_k4.metric("🔴 Blocked (Out of Stock)", nb_rupture)
     st.divider()
 
     # --- 2. BOUTONS DE TÉLÉCHARGEMENT ---
@@ -444,18 +466,18 @@ elif st.session_state['role'] == 'client':
     df_us_ca = df_final[mask_us_ca].copy()
     df_monde = df_final[~mask_us_ca].copy()
 
-    st.subheader("📥 Téléchargements Groupés")
+    st.subheader("📥 Bulk Downloads")
     col_d1, col_d2, col_d3, col_d4 = st.columns(4)
     with col_d1:
         if not df_us_ca.empty:
             buf1 = io.BytesIO()
             with pd.ExcelWriter(buf1, engine='openpyxl') as writer: df_us_ca.to_excel(writer, index=False)
-            st.download_button("🇺🇸🇨🇦 Excel (US & CANADA)", data=buf1.getvalue(), file_name="Commandes_US_CANADA.xlsx", type="primary", use_container_width=True)
+            st.download_button("🇺🇸🇨🇦 Download Excel (US & CANADA)", data=buf1.getvalue(), file_name="Orders_US_CANADA.xlsx", type="primary", use_container_width=True)
     with col_d2:
         if not df_monde.empty:
             buf2 = io.BytesIO()
             with pd.ExcelWriter(buf2, engine='openpyxl') as writer: df_monde.to_excel(writer, index=False)
-            st.download_button("🌍 Excel (EUROPE & INTER)", data=buf2.getvalue(), file_name="Commandes_MONDE.xlsx", type="primary", use_container_width=True)
+            st.download_button("🌍 Download Excel (EUROPE & ROW)", data=buf2.getvalue(), file_name="Orders_ROW.xlsx", type="primary", use_container_width=True)
     with col_d3:
         if REPORTLAB_OK and not df_final.empty:
             zip_pack = generer_packing_lists_zip(df_final, dict_details)
@@ -467,14 +489,15 @@ elif st.session_state['role'] == 'client':
 
     st.divider()
 
-    # --- 3. RECHERCHE ET FILTRES DYNAMIQUES ---
-    st.subheader("🔍 Recherche et Vision Détaillée")
+    # --- 3. RECHERCHE ET FILTRES DYNAMIQUES (ANGLAIS) ---
+    st.subheader("🔍 Search & Detailed View")
     col_f1, col_f2 = st.columns([1, 2])
-    search_query = col_f1.text_input("Rechercher (N° Commande, Pays, Article...)")
-    options_statut = ["🟢 100% Prêtes", "⏳ En Attente Production", "🔴 Bloquées (Rupture)"]
-    filtre_statut = col_f2.multiselect("Filtrer par état global de la commande :", options_statut, default=options_statut)
+    search_query = col_f1.text_input("Search (Order No., Country, SKU...)")
+    
+    options_statut = ["🟢 100% Ready", "⏳ Pending Production", "🔴 Blocked (Out of stock)"]
+    filtre_statut = col_f2.multiselect("Filter by global order status:", options_statut, default=options_statut)
 
-    # --- 4. AFFICHAGE ACCORDÉON ---
+    # --- 4. AFFICHAGE ACCORDÉON (TRADUIT) ---
     groupes_commandes = df_final.groupby('Num_Commande')
     commandes_affichees = 0
 
@@ -482,9 +505,9 @@ elif st.session_state['role'] == 'client':
         if str(cmd).upper() in ["INCONNU", "NAN"]: continue
         
         statut_cmd = order_status_map[cmd]
-        if statut_cmd == 'Prêt' and "🟢 100% Prêtes" not in filtre_statut: continue
-        if statut_cmd == 'Attente' and "⏳ En Attente Production" not in filtre_statut: continue
-        if statut_cmd == 'Rupture' and "🔴 Bloquées (Rupture)" not in filtre_statut: continue
+        if statut_cmd == 'Ready' and "🟢 100% Ready" not in filtre_statut: continue
+        if statut_cmd == 'Pending' and "⏳ Pending Production" not in filtre_statut: continue
+        if statut_cmd == 'Blocked' and "🔴 Blocked (Out of stock)" not in filtre_statut: continue
 
         texte_recherche = f"{cmd} {lignes['Client'].iloc[0]} {lignes['Pays'].iloc[0]} {' '.join(lignes['Article'].astype(str))}".lower()
         if search_query and search_query.lower() not in texte_recherche: continue
@@ -493,26 +516,34 @@ elif st.session_state['role'] == 'client':
         client_nom = str(lignes.iloc[0]['Client'])
         pays_nom = str(lignes.iloc[0]['Pays'])
         
-        if statut_cmd == 'Rupture': icone = "🔴"
-        elif statut_cmd == 'Attente': icone = "⏳"
+        # Traduction des pays (US et Canada) pour l'affichage propre
+        if "ETATS" in pays_nom.upper() or "USA" in pays_nom.upper(): pays_nom_display = "USA"
+        elif "CANADA" in pays_nom.upper(): pays_nom_display = "CANADA"
+        else: pays_nom_display = pays_nom
+
+        if statut_cmd == 'Blocked': icone = "🔴"
+        elif statut_cmd == 'Pending': icone = "⏳"
         else: icone = "🟢"
             
-        titre_accordian = f"{icone} Commande N° {cmd} — {client_nom} ({pays_nom})"
+        titre_accordian = f"{icone} Order N° {cmd} — {client_nom} ({pays_nom_display})"
         
         with st.expander(titre_accordian):
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
                 qte = int(row['Qte_Demandée'])
-                statut = str(row['Statut'])
+                statut_fr = str(row['Statut'])
                 date = str(row['Date_Disponibilité'])
-                libelle = dict_details.get(art, {}).get('libelle', 'Article inconnu')
+                libelle = dict_details.get(art, {}).get('libelle', 'Unknown Item')
                 
-                if statut == "Rupture":
-                    st.error(f"**{art} - {libelle}** : {qte} cartons ➔ **{statut}** (Date inconnue)")
-                elif "Attente Prod" in statut:
-                    st.warning(f"**{art} - {libelle}** : {qte} cartons ➔ **{statut}** (Prêt le : {date})")
+                # Traduction ligne par ligne
+                if statut_fr == "Rupture":
+                    st.error(f"**{art} - {libelle}** : {qte} cases ➔ **Out of stock** (Date unknown)")
+                elif "Attente Prod" in statut_fr:
+                    # Enlever le "(Partiel)" s'il y est pour faire plus propre en anglais
+                    date_clean = date.replace(" (Partiel)", "")
+                    st.warning(f"**{art} - {libelle}** : {qte} cases ➔ **Pending** (Ready on: {date_clean})")
                 else:
-                    st.success(f"**{art} - {libelle}** : {qte} cartons ➔ **{statut}** (Immédiate)")
+                    st.success(f"**{art} - {libelle}** : {qte} cases ➔ **Ready** (In stock)")
 
     if commandes_affichees == 0:
-        st.info("Aucune commande ne correspond à votre recherche ou vos filtres.")
+        st.info("No orders match your search or filters.")
