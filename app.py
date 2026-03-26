@@ -425,9 +425,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details, app_settings):
 # ==========================================
 # INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V47")
-st.title("📦 Portail de Disponibilité - VERSION 47 🔴")
-st.write("Recherche agressive du Stock Physique et Mouchard de colonnes.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V48")
+st.title("📦 Portail de Disponibilité - VERSION 48 🔴")
+st.write("Le journal de bord fonctionne enfin !")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
@@ -437,7 +437,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités (V47)", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V48)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
@@ -497,7 +497,7 @@ if st.button("🚀 Calculer les disponibilités (V47)", type="primary", use_cont
                 st.session_state['dict_details'] = dict_details
                 st.session_state['df_nom_brut'] = df_nom_scanner
 
-                # --- B. LECTURE STOCK (V47 : DÉTECTION AGRESSIVE PHYSIQUE) ---
+                # --- B. LECTURE STOCK ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 mask_total = df_stock_brut.astype(str).apply(lambda x: x.str.contains('TOTAL', case=False, na=False)).any(axis=1)
                 df_stock_brut = df_stock_brut[~mask_total]
@@ -506,9 +506,8 @@ if st.button("🚀 Calculer les disponibilités (V47)", type="primary", use_cont
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                 
-                # 1. On cherche d'abord TOUTE colonne qui contient le mot PHYS ou PHYSIQUE
+                # RECHERCHE AGRESSIVE STOCK PHYSIQUE (V48)
                 col_qte_stock = next((c for c in df_stock_brut.columns if 'PHYSIQUE' in c or 'PHYS' in c), None)
-                # 2. Si vraiment on ne trouve pas, on se rabat sur la liste classique
                 if not col_qte_stock:
                     col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
                 
@@ -574,6 +573,8 @@ if st.button("🚀 Calculer les disponibilités (V47)", type="primary", use_cont
                                 if code and code not in ["0", "NAN", "NONE"]:
                                     liste_prod.append({'ARTICLE': code, 'QTE_PRODUITE': qte, 'DATE_PROD': d, 'SOURCE': f.name})
 
+                # V48 : SAUVEGARDE DU JOURNAL DE BORD POUR L'AFFICHAGE !
+                st.session_state['log_diagnostic'] = log_diagnostic
                 st.session_state['dict_prepa'] = dict_prepa  
                 st.session_state['df_prod_brut'] = df_prod_brut_total 
                 if liste_prod:
@@ -708,7 +709,7 @@ if st.session_state['calcul_ok']:
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V47.xlsx", type="primary", use_container_width=True)
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V48.xlsx", type="primary", use_container_width=True)
     with c_btn2:
         if REPORTLAB_OK:
             zip_pack = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
@@ -721,7 +722,7 @@ if st.session_state['calcul_ok']:
             st.warning("Générateur RDV inactif (FPDF non installé).")
 
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V47")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V48")
     recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
