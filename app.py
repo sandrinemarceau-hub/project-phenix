@@ -46,14 +46,27 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# OUTILS ET FONCTIONS DE BASE
+# OUTILS ET PARAMÈTRES MODIFIABLES
 # ==========================================
 with st.sidebar:
     st.write("🛠️ **Outils techniques**")
-    st.info("🧠 THE BRAIN")
     if st.button("🗑️ Vider le cache et Redémarrer"):
         st.session_state.clear()
         st.rerun()
+
+    st.divider()
+    st.write("📝 **Paramètres des PDF RDV**")
+    pdf_contact = st.text_input("Contact Email", "logistique@sovereignbrands.com")
+    pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Du Lundi au Vendredi)")
+    pdf_adresse_defaut = st.text_area("Adresse Enlèvement (MGC)", "MGC\nZone Industrielle\n21200 Beaune", height=100)
+    pdf_adresse_veuve = st.text_area("Adresse Enlèvement (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=100)
+
+settings_pdf = {
+    'contact': pdf_contact,
+    'horaires': pdf_horaires,
+    'adresse_defaut': pdf_adresse_defaut,
+    'adresse_veuve': pdf_adresse_veuve
+}
 
 if 'calcul_ok' not in st.session_state:
     st.session_state['calcul_ok'] = False
@@ -298,7 +311,6 @@ if FPDF_OK:
 
             total_h = max(max(lines_label, lines_value) * line_height + 4, 12)
             
-            # CORRECTION V45 : On force x_curr à être strictement égal à marge_x (15) pour aligner tout le tableau
             x_curr, y_curr = marge_x, self.get_y()
 
             self.set_xy(x_curr, y_curr)
@@ -315,7 +327,7 @@ if FPDF_OK:
 
             self.set_xy(marge_x, y_curr + total_h)
 
-def generer_rdv_documents_zip(df_resultats, dict_details):
+def generer_rdv_documents_zip(df_resultats, dict_details, app_settings):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w") as zip_file:
         commandes = df_resultats['Num_Commande'].unique()
@@ -363,9 +375,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
             pays = clean_nan(lignes.iloc[0]['Pays'])
             exportateur = clean_nan(lignes.iloc[0]['Exportateur']).upper()
             
-            adresse_enlevement = "MGC\nZone Industrielle\n21200 Beaune"
+            adresse_enlevement = app_settings['adresse_defaut']
             if "VEUVE" in exportateur or "AMBAL" in exportateur:
-                adresse_enlevement = "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil"
+                adresse_enlevement = app_settings['adresse_veuve']
 
             if FPDF_OK:
                 pdf = RDVPDF()
@@ -386,8 +398,8 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
                 pdf.ln(10)
 
                 pdf.draw_harmonized_row("Pick Up address / Adresse d'enlèvement", adresse_enlevement)
-                pdf.draw_harmonized_row("Loading Hours / Horaires d'ouverture", "08:00 - 16:00 (Du Lundi au Vendredi)")
-                pdf.draw_harmonized_row("Contact", "logistique@sovereignbrands.com")
+                pdf.draw_harmonized_row("Loading Hours / Horaires d'ouverture", app_settings['horaires'])
+                pdf.draw_harmonized_row("Contact", app_settings['contact'])
                 pdf.draw_harmonized_row("Order number / Numéro de commande", str(cmd))
                 pdf.draw_harmonized_row("Country of delivery", pays)
                 pdf.draw_harmonized_row("Customer / Client", client)
@@ -413,9 +425,9 @@ def generer_rdv_documents_zip(df_resultats, dict_details):
 # ==========================================
 # INTERFACE VISUELLE
 # ==========================================
-st.set_page_config(layout="wide", page_title="Portail Logistique V45")
-st.title("📦 Portail de Disponibilité 🔴")
-st.write("Alignement parfait du tableau RDV et Génération Multi-PDFs.")
+st.set_page_config(layout="wide", page_title="Portail Logistique V46")
+st.title("📦 Portail de Disponibilité - VERSION 46 🔴")
+st.write("Correction Stock Physique prioritaire & Paramètres PDF Modifiables.")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
@@ -425,7 +437,7 @@ with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xl
 
 st.divider()
 
-if st.button("🚀 Calculer les disponibilités", type="primary", use_container_width=True):
+if st.button("🚀 Calculer les disponibilités (V46)", type="primary", use_container_width=True):
     if fichier_stock and fichiers_prod and fichier_commandes:
         with st.spinner('Analyse, Auto-Apprentissage et Omni-Search en cours...'):
             try:
@@ -485,7 +497,7 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 st.session_state['dict_details'] = dict_details
                 st.session_state['df_nom_brut'] = df_nom_scanner
 
-                # --- B. LECTURE STOCK ---
+                # --- B. LECTURE STOCK (V46 : STOCK PHYSIQUE PRIORITAIRE) ---
                 df_stock_brut = lire_fichier(fichier_stock, skip_stock)
                 mask_total = df_stock_brut.astype(str).apply(lambda x: x.str.contains('TOTAL', case=False, na=False)).any(axis=1)
                 df_stock_brut = df_stock_brut[~mask_total]
@@ -493,7 +505,9 @@ if st.button("🚀 Calculer les disponibilités", type="primary", use_container_
                 
                 df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
                 col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
-                col_qte_stock = next((c for c in ['STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'STOCKPHYSIQUE', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
+                
+                # V46 : Stock Physique mis en premier choix
+                col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'PHYSIQUE', 'STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
                 
                 if not col_art_stock or not col_qte_stock: 
                     st.error("❌ Erreur STOCK : Colonnes introuvables.")
@@ -684,20 +698,21 @@ if st.session_state['calcul_ok']:
     with c_btn1:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer: st.session_state['df_final'].to_excel(writer, index=False, sheet_name='Analyse')
-        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V45.xlsx", type="primary", use_container_width=True)
+        st.download_button("📥 Télécharger l'Excel", data=buffer, file_name="Analyse_V46.xlsx", type="primary", use_container_width=True)
     with c_btn2:
         if REPORTLAB_OK:
             zip_pack = generer_packing_lists_zip(st.session_state['df_final'], st.session_state['dict_details'])
             st.download_button("📦 Packing Lists (PDF)", data=zip_pack, file_name="Packing_Lists.zip", type="secondary", use_container_width=True)
     with c_btn3:
         if FPDF_OK:
-            zip_rdv = generer_rdv_documents_zip(st.session_state['df_final'], st.session_state['dict_details'])
+            # V46 : On passe les paramètres de la barre latérale au générateur de PDF
+            zip_rdv = generer_rdv_documents_zip(st.session_state['df_final'], st.session_state['dict_details'], settings_pdf)
             st.download_button("📅 RDV Documents (PDF)", data=zip_rdv, file_name="RDV_Documents.zip", type="secondary", use_container_width=True)
         else:
             st.warning("Générateur RDV inactif (FPDF non installé).")
 
     st.divider()
-    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V45")
+    st.subheader("🕵️‍♂️ Scanner Global & Généalogie V46")
     recherche = st.text_input("Code article (ex: 48755) :")
     if recherche:
         rech_clean = re.sub(r'[^A-Z0-9]', '', recherche.strip().upper()).lstrip('0')
