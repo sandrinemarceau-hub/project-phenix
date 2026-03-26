@@ -254,7 +254,7 @@ if st.session_state['role'] == 'admin':
         pdf_adresse_veuve = st.text_area("Adresse Enlèvement (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=100)
     settings_pdf = {'contact': pdf_contact, 'horaires': pdf_horaires, 'adresse_defaut': pdf_adresse_defaut, 'adresse_veuve': pdf_adresse_veuve}
 
-    st.title("🛠️ Back Office - V48 (Dashboard & Filtres)")
+    st.title("🛠️ Back Office - V49 (Dashboard & Filtres)")
     st.write("Importez vos fichiers usine ici. Les résultats seront sauvegardés pour les clients.")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -280,16 +280,26 @@ if st.session_state['role'] == 'admin':
                             if c_art:
                                 df_nom_brut['CLEAN_ART'] = nettoyage_extreme(df_nom_brut[c_art])
                                 if c_prepa: df_nom_brut['CLEAN_PREPA'] = nettoyage_extreme(df_nom_brut[c_prepa])
+                                
                                 for _, r in df_nom_brut.iterrows():
                                     art_id = str(r['CLEAN_ART']); prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
-                                    if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]: dict_prepa[art_id] = prepa_id
-                                    if art_id not in dict_details: dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
-                                    if c_lib: val_lib = clean_nan(r[c_lib]); 
-                                    if val_lib and val_lib != "NAN": dict_details[art_id]['libelle'] = val_lib
-                                    if c_poids: val_pds = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0]); 
-                                    if val_pds > 0: dict_details[art_id]['poids'] = val_pds
-                                    if c_cas_pal: val_pal = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0]); 
-                                    if val_pal > 0: dict_details[art_id]['cas_pal'] = val_pal
+                                    if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]: 
+                                        dict_prepa[art_id] = prepa_id
+                                        
+                                    if art_id not in dict_details: 
+                                        dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
+                                        
+                                    if c_lib: 
+                                        val_lib = clean_nan(r[c_lib])
+                                        if val_lib and val_lib != "NAN": dict_details[art_id]['libelle'] = val_lib
+                                        
+                                    if c_poids: 
+                                        val_pds = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0])
+                                        if val_pds > 0: dict_details[art_id]['poids'] = val_pds
+                                        
+                                    if c_cas_pal: 
+                                        val_pal = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0])
+                                        if val_pal > 0: dict_details[art_id]['cas_pal'] = val_pal
 
                     df_stock_brut = lire_fichier(fichier_stock, skip_stock); mask_total = df_stock_brut.astype(str).apply(lambda x: x.str.contains('TOTAL', case=False, na=False)).any(axis=1); df_stock_brut = df_stock_brut[~mask_total]
                     df_stock_brut.columns = df_stock_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True)
@@ -383,18 +393,19 @@ if st.session_state['role'] == 'admin':
                     colonnes_a_afficher = [c for c in df_final.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
                     st.dataframe(df_final[colonnes_a_afficher], use_container_width=True)
                 except Exception as e:
-                    st.error(f"Erreur : {e}")
+                    import traceback
+                    st.error(f"Erreur : {e}\n{traceback.format_exc()}")
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V48
+# ESPACE CLIENT (FRONT OFFICE) - V49
 # ==========================================
 elif st.session_state['role'] == 'client':
     st.title("🌐 Portail Suivi Commandes & Logistique")
     st.write("Bienvenue sur votre espace. Vous trouverez ci-dessous la disponibilité de vos commandes en temps réel.")
     
     if not os.path.exists('base_logistique.pkl'):
-        st.warning("⚠️ Aucune donnée n'est actuellement disponible. L'entrepôt n'a pas encore mis à jour la base.")
+        st.warning("⚠️ Aucune donnée n'est actuellement disponible. L'entrepôt n'a pas encore mis à jour la base d'aujourd'hui.")
         st.stop()
     
     try:
@@ -406,17 +417,14 @@ elif st.session_state['role'] == 'client':
         st.error("Erreur lors de la lecture de la base de données.")
         st.stop()
 
-    # --- 1. CALCUL DES KPIs (TABLEAU DE BORD) ---
+    # --- 1. CALCUL DES KPIs ---
     order_status_map = {}
     for cmd, grp in df_final.groupby('Num_Commande'):
         if str(cmd).upper() in ["INCONNU", "NAN"]: continue
         statuses = grp['Statut'].values
-        if 'Rupture' in statuses: 
-            order_status_map[cmd] = 'Rupture'
-        elif any('Attente Prod' in s for s in statuses): 
-            order_status_map[cmd] = 'Attente'
-        else: 
-            order_status_map[cmd] = 'Prêt'
+        if 'Rupture' in statuses: order_status_map[cmd] = 'Rupture'
+        elif any('Attente Prod' in s for s in statuses): order_status_map[cmd] = 'Attente'
+        else: order_status_map[cmd] = 'Prêt'
             
     nb_total = len(order_status_map)
     nb_pret = sum(1 for v in order_status_map.values() if v == 'Prêt')
@@ -428,7 +436,7 @@ elif st.session_state['role'] == 'client':
     col_k1.metric("📦 Total Commandes", nb_total)
     col_k2.metric("🟢 100% Prêtes (En Stock)", nb_pret)
     col_k3.metric("⏳ En Attente Production", nb_attente)
-    col_k4.metric("🔴 Bloquées (Rupture Partielle)", nb_rupture)
+    col_k4.metric("🔴 Bloquées (Rupture)", nb_rupture)
     st.divider()
 
     # --- 2. BOUTONS DE TÉLÉCHARGEMENT ---
@@ -463,25 +471,21 @@ elif st.session_state['role'] == 'client':
     st.subheader("🔍 Recherche et Vision Détaillée")
     col_f1, col_f2 = st.columns([1, 2])
     search_query = col_f1.text_input("Rechercher (N° Commande, Pays, Article...)")
-    
-    # Filtres par cases à cocher (multiselect)
     options_statut = ["🟢 100% Prêtes", "⏳ En Attente Production", "🔴 Bloquées (Rupture)"]
-    filtre_statut = col_f2.multiselect("Filtrer par état de la commande :", options_statut, default=options_statut)
+    filtre_statut = col_f2.multiselect("Filtrer par état global de la commande :", options_statut, default=options_statut)
 
-    # --- 4. AFFICHAGE ACCORDÉON (FILTRÉ) ---
+    # --- 4. AFFICHAGE ACCORDÉON ---
     groupes_commandes = df_final.groupby('Num_Commande')
     commandes_affichees = 0
 
     for cmd, lignes in groupes_commandes:
         if str(cmd).upper() in ["INCONNU", "NAN"]: continue
         
-        # Déterminer le statut de l'accordéon pour le filtre
         statut_cmd = order_status_map[cmd]
         if statut_cmd == 'Prêt' and "🟢 100% Prêtes" not in filtre_statut: continue
         if statut_cmd == 'Attente' and "⏳ En Attente Production" not in filtre_statut: continue
         if statut_cmd == 'Rupture' and "🔴 Bloquées (Rupture)" not in filtre_statut: continue
 
-        # Filtrer par la barre de recherche (recherche globale sur la commande)
         texte_recherche = f"{cmd} {lignes['Client'].iloc[0]} {lignes['Pays'].iloc[0]} {' '.join(lignes['Article'].astype(str))}".lower()
         if search_query and search_query.lower() not in texte_recherche: continue
 
