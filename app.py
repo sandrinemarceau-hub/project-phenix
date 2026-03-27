@@ -116,8 +116,28 @@ def lire_fichier(fichier, lignes_a_ignorer):
         return pd.read_excel(xls, sheet_name=0, skiprows=lignes_a_ignorer)
 
 # ==========================================
-# MOTEUR PDF UNITAIRE (POUR BOUTONS FRONT-OFFICE)
+# MOTEUR PDF UNITAIRE & STRUCTURE RDV
 # ==========================================
+if FPDF_OK:
+    class RDVPDF(FPDF):
+        def header(self):
+            self.ln(35); self.set_font("Helvetica", "B", 24); self.cell(0, 15, 'RDV DOCUMENT', 0, 1, 'C'); self.ln(2)
+        def get_lines_count(self, w, line_height, text):
+            try: return len(self.multi_cell(w, line_height, text, split_only=True))
+            except:
+                try: return len(self.multi_cell(w, line_height, text, dry_run=True, output="LINES"))
+                except: return max(1, math.ceil(self.get_string_width(text) / (w - 2)))
+        def draw_harmonized_row(self, label, value):
+            label = str(label).replace("’", "'").replace("–", "-"); value = str(value).replace("’", "'").replace("–", "-")
+            w_label, w_value, marge_x, line_height = 75, 105, 15, 6
+            self.set_font("Helvetica", "", 10); lines_label = self.get_lines_count(w_label, line_height, label)
+            self.set_font("Helvetica", "B", 10); lines_value = self.get_lines_count(w_value, line_height, value)
+            total_h = max(max(lines_label, lines_value) * line_height + 4, 12); x_curr, y_curr = marge_x, self.get_y()
+            self.set_xy(x_curr, y_curr); self.cell(w_label, total_h, "", border=1); self.cell(w_value, total_h, "", border=1)
+            self.set_font("Helvetica", "", 10); self.set_xy(x_curr, y_curr + (total_h - lines_label * line_height) / 2); self.multi_cell(w_label, line_height, label, align='C')
+            self.set_font("Helvetica", "B", 10); self.set_xy(x_curr + w_label, y_curr + (total_h - lines_value * line_height) / 2); self.multi_cell(w_value, line_height, value, align='C')
+            self.set_xy(marge_x, y_curr + total_h)
+
 def generer_pl_unique(cmd, lignes, dict_details, app_settings):
     client = str(lignes.iloc[0]['Client'])
     adresse = clean_nan(lignes.iloc[0]['Adresse'])
@@ -445,7 +465,6 @@ if st.session_state['role'] == 'admin':
                     
                     df_final = pd.DataFrame(resultats)
                     
-                    # SAUVEGARDE DANS LE FICHIER CACHÉ
                     cache_data = {'df_final': df_final, 'dict_details': dict_details, 'settings_pdf': settings_pdf}
                     pd.to_pickle(cache_data, 'base_logistique.pkl')
                     
@@ -466,7 +485,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V61 (RETOUR UI + BOUTONS ACTIFS)
+# ESPACE CLIENT (FRONT OFFICE) - V62 (CORRECTION PDF UNITAIRES)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
@@ -480,7 +499,6 @@ elif st.session_state['role'] == 'client':
             .badge-pending { background-color: #fef7e0; color: #b06000; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; white-space: nowrap;}
             .badge-blocked { background-color: #fce8e6; color: #d93025; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; white-space: nowrap;}
             
-            /* CSS très propre pour le tableau (force la couleur noire/gris foncé) */
             .custom-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: #333333; margin-top: 10px; }
             .custom-table th { color: #6b778c; font-weight: 500; text-align: left; padding-bottom: 10px; border-bottom: 1px solid #dfe1e6; }
             .custom-table td { padding: 12px 0; border-bottom: 1px solid #f4f5f7; vertical-align: middle; color: #333333; }
@@ -589,7 +607,6 @@ elif st.session_state['role'] == 'client':
         titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
         with st.expander(titre_accordian):
-            # RETOUR AU DESIGN CLAIR (V56) POUR L'ÉCRAN
             html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Cases)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
             
             for _, row in lignes.iterrows():
@@ -620,7 +637,6 @@ elif st.session_state['role'] == 'client':
             html_table += "</tbody></table></div>"
             st.markdown(html_table, unsafe_allow_html=True)
             
-            # --- BOUTONS D'ACTION UNITAIRES ACTIFS ! ---
             st.markdown("<br>", unsafe_allow_html=True)
             col_a1, col_a2, col_a3 = st.columns([1.5, 1.5, 2])
             
@@ -633,7 +649,6 @@ elif st.session_state['role'] == 'client':
                 pl_bytes = generer_pl_unique(cmd, lignes, dict_details, settings_pdf)
                 col_a2.download_button(f"📦 Download Packing List", data=pl_bytes, file_name=f"Packing_List_{cmd}.pdf", key=f"pl_{cmd}", use_container_width=True)
             
-            # Bouton E-mail qui ouvre la boite mail du client
             subject = f"Update on your Sovereign Brands Order #{cmd}"
             body = f"Hello,%0A%0AHere is an update regarding your order #{cmd}.%0A"
             mail_btn_html = f'<a href="mailto:?subject={subject}&body={body}" style="display: block; text-align: center; background-color: #f4f5f7; color: #172b4d; padding: 0.5rem 1rem; border-radius: 0.25rem; text-decoration: none; border: 1px solid #dfe1e6; font-weight: 600; font-size: 0.9rem;">✉ Forward Tracking via Email</a>'
