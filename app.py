@@ -373,7 +373,6 @@ if st.session_state['role'] == 'admin':
                             if not dates_trouvees: date_dispo = "Immédiate"; statut = "En Stock"
                             else: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y'); statut = "Attente Prod"
                         
-                        # ---> LE CORRECTIF EST ICI : Ajout de la Date_Commande <---
                         resultats.append({
                             'Num_Commande': commande['NUM_CDE'], 
                             'Date_Commande': commande['DATE_CDE'], 
@@ -415,7 +414,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V58 (CORRECTIF DATE KEYERROR)
+# ESPACE CLIENT (FRONT OFFICE) - V59 (CORRECTION VARIABLE NAMEERROR)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
@@ -522,7 +521,6 @@ elif st.session_state['role'] == 'client':
         elif "CANADA" in pays_nom.upper(): pays_nom_display = "Canada"
         else: pays_nom_display = pays_nom.capitalize()
 
-        # SECURITE DATE
         if 'Date_Commande' in lignes.columns and pd.notna(lignes['Date_Commande'].iloc[0]):
             order_date_simulated = pd.to_datetime(lignes['Date_Commande'].iloc[0]).strftime("%m/%d/%Y")
         else:
@@ -630,7 +628,8 @@ elif st.session_state['role'] == 'client':
                     <td>{pill}</td>
                 </tr>
                 """
-            html_table += "</tbody></table>"
+            # --- LA CORRECTION EST ICI ---
+            html_pl_table += "</tbody></table>"
             st.markdown(html_pl_table, unsafe_allow_html=True)
 
             total_pallets_rounded = int(math.ceil(t_palettes))
