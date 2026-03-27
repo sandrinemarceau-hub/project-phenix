@@ -31,15 +31,6 @@ st.set_page_config(layout="wide", page_title="Sovereign Brands - Orders")
 if 'role' not in st.session_state:
     st.session_state['role'] = None
 
-# --- RAPPEL SÉCURITÉ : CONFIGURATION DES SECRETS SUR STREAMLIT CLOUD ---
-# Pour cacher les mots de passe de votre code sur Internet (GitHub), vous devez les mettre
-# dans le coffre-fort de Streamlit Cloud.
-# 1. Dans les paramètres de votre application sur share.streamlit.io, allez dans "Secrets".
-# 2. Copiez et collez ceci :
-#    PASS_ADMIN = "Logistique2026!"
-#    PASS_CLIENT = "ClientSovereign!"
-# 3. Sauvegardez. Le code ci-dessous lira automatiquement ces valeurs.
-
 PASS_ADMIN = st.secrets.get("PASS_ADMIN", "Logistique2026!")
 PASS_CLIENT = st.secrets.get("PASS_CLIENT", "ClientSovereign!")
 
@@ -290,20 +281,14 @@ if st.session_state['role'] == 'admin':
                                 
                                 for _, r in df_nom_brut.iterrows():
                                     art_id = str(r['CLEAN_ART']); prepa_id = str(r['CLEAN_PREPA']) if c_prepa else ""
-                                    if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]: 
-                                        dict_prepa[art_id] = prepa_id
-                                        
-                                    if art_id not in dict_details: 
-                                        dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
-                                        
+                                    if prepa_id and prepa_id not in ["0", "NAN", "NONE", ".", art_id]: dict_prepa[art_id] = prepa_id
+                                    if art_id not in dict_details: dict_details[art_id] = {'libelle': 'Inconnu', 'format': '', 'degres': '', 'couleur': '', 'uc': 6.0, 'poids': 0.0, 'type_pal': 'N/A', 'cas_pal': 100.0}
                                     if c_lib: 
                                         val_lib = clean_nan(r[c_lib])
                                         if val_lib and val_lib != "NAN": dict_details[art_id]['libelle'] = val_lib
-                                        
                                     if c_poids: 
                                         val_pds = float(nettoyage_quantite(pd.Series([r[c_poids]]))[0])
                                         if val_pds > 0: dict_details[art_id]['poids'] = val_pds
-                                        
                                     if c_cas_pal: 
                                         val_pal = float(nettoyage_quantite(pd.Series([r[c_cas_pal]]))[0])
                                         if val_pal > 0: dict_details[art_id]['cas_pal'] = val_pal
@@ -322,8 +307,7 @@ if st.session_state['role'] == 'admin':
                         if col_sortie_auto and col_entree_auto:
                             for _, r in df_temp.iterrows():
                                 parent = nettoyage_extreme(pd.Series([r[col_sortie_auto]]))[0]; enfant = nettoyage_extreme(pd.Series([r[col_entree_auto]]))[0]
-                                if parent and enfant and parent != enfant and parent not in ["0", "NAN", "NONE"] and enfant not in ["0", "NAN", "NONE"]:
-                                    if parent not in dict_prepa: dict_prepa[parent] = enfant
+                                if parent and enfant and parent != enfant and parent not in ["0", "NAN", "NONE"] and enfant not in ["0", "NAN", "NONE"]: dict_prepa[parent] = enfant
                         arts_cols = [c for c in colonnes_temp if any(k in c for k in ['ART', 'CODE', 'REF', 'PRODUIT', 'COMPOSANT']) and not any(k in c for k in ['QTE', 'QUANT', 'DATE', 'ECH'])]
                         qtes_cols = [c for c in colonnes_temp if any(k in c for k in ['QTE', 'QUANT', 'RESTE', 'AFAIRE', 'BESOIN', 'LANCE', 'PREVU', 'PROD', 'ORDRE']) and not any(k in c for k in ['ART', 'CODE', 'DATE', 'ECH', 'REF'])]
                         dates_cols = [c for c in colonnes_temp if any(k in c for k in ['DATE', 'ECH', 'FIN', 'LIV', 'DISPO', 'BESOIN', 'PLANIF', 'REALISATION', 'PREVU', 'CREA', 'DELAI']) and not any(k in c for k in ['QTE', 'QUANT', 'ART', 'CODE'])]
@@ -388,7 +372,25 @@ if st.session_state['role'] == 'admin':
                         else:
                             if not dates_trouvees: date_dispo = "Immédiate"; statut = "En Stock"
                             else: date_dispo = max(dates_trouvees).strftime('%d/%m/%Y'); statut = "Attente Prod"
-                        resultats.append({'Num_Commande': commande['NUM_CDE'], 'Client': commande['CLIENT'], 'Article': article, 'Qte_Demandée': int(commande['QUANTITE']), 'Tiré_Stock': int(qte_prise_stock), 'Tiré_Prod': int(qte_prise_prod), 'Remplacement_Prepa': utilise_prepa, 'Manquant': int(qte_restante), 'Statut': statut, 'Date_Disponibilité': date_dispo, 'Adresse': commande['ADRESSE'], 'Ville': commande['VILLE'], 'Pays': commande['PAYS'], 'Exportateur': commande['EXPORTATEUR']})
+                        
+                        # ---> LE CORRECTIF EST ICI : Ajout de la Date_Commande <---
+                        resultats.append({
+                            'Num_Commande': commande['NUM_CDE'], 
+                            'Date_Commande': commande['DATE_CDE'], 
+                            'Client': commande['CLIENT'], 
+                            'Article': article, 
+                            'Qte_Demandée': int(commande['QUANTITE']), 
+                            'Tiré_Stock': int(qte_prise_stock), 
+                            'Tiré_Prod': int(qte_prise_prod), 
+                            'Remplacement_Prepa': utilise_prepa, 
+                            'Manquant': int(qte_restante), 
+                            'Statut': statut, 
+                            'Date_Disponibilité': date_dispo, 
+                            'Adresse': commande['ADRESSE'], 
+                            'Ville': commande['VILLE'], 
+                            'Pays': commande['PAYS'], 
+                            'Exportateur': commande['EXPORTATEUR']
+                        })
                     
                     df_final = pd.DataFrame(resultats)
                     
@@ -398,7 +400,6 @@ if st.session_state['role'] == 'admin':
                     
                     st.success("✅ Calcul terminé ! La base a été sauvegardée et est maintenant visible par les clients sur le Front Office.")
                     
-                    # --- Formatage propre pour l'Admin ---
                     df_admin_view = df_final.copy()
                     df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés'}, inplace=True)
                     colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
@@ -414,47 +415,27 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V57 (ULTIMATE INTEGRATED UI)
+# ESPACE CLIENT (FRONT OFFICE) - V58 (CORRECTIF DATE KEYERROR)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
-    # --- CSS MASSIVE INJECTION POUR LE LOOK SAAS + MOBILE + PACKING LIST ---
     st.markdown("""
         <style>
             #MainMenu, footer, header {visibility: hidden;}
             .block-container { padding-top: 1rem; max-width: 95%; }
             .stApp { background-color: #f4f5f7; }
-            
-            .main-panel {
-                background-color: white;
-                padding: 30px;
-                border-radius: 8px;
-                box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05);
-                margin-top: 20px;
-            }
-
-            /* Style des Badges (Pilules) */
+            .main-panel { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05); margin-top: 20px; }
             .badge-ready { background-color: #e6f4ea; color: #1e8e3e; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; white-space: nowrap;}
             .badge-pending { background-color: #fef7e0; color: #b06000; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; white-space: nowrap;}
             .badge-blocked { background-color: #fce8e6; color: #d93025; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; display: inline-block; white-space: nowrap;}
-
-            /* Style du tableau HTML intérieur */
             .custom-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: #333; margin-top: 10px; table-layout: fixed;}
             .custom-table th { color: #6b778c; font-weight: 500; text-align: left; padding-bottom: 10px; border-bottom: 1px solid #dfe1e6; }
             .custom-table td { padding: 12px 0; border-bottom: 1px solid #f4f5f7; vertical-align: middle; word-wrap: break-word;}
             .item-name { font-weight: 600; color: #172b4d; display: block; }
             .item-sku { color: #7a869a; font-size: 0.8rem; font-family: monospace;}
-            
-            /* Customiser l'expander de Streamlit style Shopify image_0.png */
             div[data-testid="stExpander"] { border: 1px solid #dfe1e6 !important; border-radius: 4px !important; margin-bottom: 10px !important; background-color: white !important; box-shadow: none !important; }
             div[data-testid="stExpander"] summary { padding: 15px !important; }
-            
-            /* --- RÈGLES SPÉCIALES SMARTPHONE --- */
-            @media (max-width: 768px) {
-                .main-panel { padding: 15px; margin-top: 10px; }
-                .custom-table { display: block; overflow-x: auto; white-space: nowrap; } 
-                div[data-testid="stMetricValue"] {font-size: 1.5rem !important;} 
-            }
+            @media (max-width: 768px) { .main-panel { padding: 15px; margin-top: 10px; } .custom-table { display: block; overflow-x: auto; white-space: nowrap; } div[data-testid="stMetricValue"] {font-size: 1.5rem !important;} }
         </style>
     """, unsafe_allow_html=True)
 
@@ -482,16 +463,20 @@ elif st.session_state['role'] == 'client':
         elif any('Attente Prod' in s for s in statuses): order_status_map[cmd] = 'Pending'
         else: order_status_map[cmd] = 'Fulfilled'
 
-    # --- TOP HEADER (RECHERCHE + BOUTONS SIMULÉS DE image_0.png) ---
     col_search, col_space, col_btn_excel, col_btn_import, col_btn_new = st.columns([3, 0.5, 1.2, 1.2, 1.2])
     search_query = col_search.text_input("🔍 Search Order ID or Customer...", label_visibility="collapsed", placeholder="Search Order ID or Customer...")
     
-    # Bouton Excel réel (Style image_0.png)
-    # FORMATAGE DE L'EXCEL CLIENT EN ANGLAIS (Nettoyage V56)
     def preparer_excel_client(df_source):
-        df_client = df_source[['Num_Commande', 'Client', 'Pays', 'Article', 'Qte_Demandée', 'Manquant', 'Statut', 'Date_Disponibilité']].copy()
-        df_client.columns = ['Order_No', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
-        
+        colonnes_dispos = df_source.columns.tolist()
+        cols_a_garder = ['Num_Commande', 'Client', 'Pays', 'Article', 'Qte_Demandée', 'Manquant', 'Statut', 'Date_Disponibilité']
+        if 'Date_Commande' in colonnes_dispos:
+            cols_a_garder.insert(1, 'Date_Commande')
+            df_client = df_source[cols_a_garder].copy()
+            df_client.columns = ['Order_No', 'Order_Date', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
+        else:
+            df_client = df_source[cols_a_garder].copy()
+            df_client.columns = ['Order_No', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
+            
         def translate_status(s):
             if "Rupture" in s: return "Out of stock"
             if "Attente Prod" in s: return "In Production"
@@ -507,13 +492,11 @@ elif st.session_state['role'] == 'client':
     with pd.ExcelWriter(buf_global, engine='openpyxl') as writer: df_client_export.to_excel(writer, index=False)
     col_btn_excel.download_button("Export to Excel", data=buf_global.getvalue(), file_name="Sovereign_Orders.xlsx", use_container_width=True)
     
-    # Boutons simulés (Style image_0.png, pas de fonction)
     col_btn_import.button("Import Orders", use_container_width=True, disabled=True)
     col_btn_new.button("+ New Order", type="primary", use_container_width=True, disabled=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Ligne des boutons PDF originaux (ZIPs en vrac)
     col_p1, col_p2, col_p3 = st.columns([2, 1.5, 1.5])
     if REPORTLAB_OK and not df_final.empty:
         zip_pack = generer_packing_lists_zip(df_final, dict_details)
@@ -539,22 +522,21 @@ elif st.session_state['role'] == 'client':
         elif "CANADA" in pays_nom.upper(): pays_nom_display = "Canada"
         else: pays_nom_display = pays_nom.capitalize()
 
-        # Date de commande simulée (image_0.png style)
-        order_date_simulated = pd.to_datetime(lignes['DATE_CDE'].iloc[0]).strftime("%m/%d/%Y")
+        # SECURITE DATE
+        if 'Date_Commande' in lignes.columns and pd.notna(lignes['Date_Commande'].iloc[0]):
+            order_date_simulated = pd.to_datetime(lignes['Date_Commande'].iloc[0]).strftime("%m/%d/%Y")
+        else:
+            order_date_simulated = "N/A"
+            
         items_count = len(lignes)
 
-        # Création de la pastille de statut dynamique
         if statut_cmd == 'Fulfilled': badge_html = f"<span class='badge-ready'>Fulfilled</span>"
         elif statut_cmd == 'Pending': badge_html = f"<span class='badge-pending'>Pending</span>"
         else: badge_html = f"<span class='badge-blocked'>Unfulfilled</span>"
 
-        # Titre de l'expander style Shopify image_0.png
         titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_html}"
         
         with st.expander(titre_accordian):
-            # --- THE INTEGRATED PACKING LIST VIEW (Digital Version of CA286172_LB1156.pdf) ---
-
-            # SECTION A: HEADER & ADDRESSES (Hardcoded simulation based on CA286172_LB1156.pdf structure)
             html_pl_header = f"""
             <div style="font-family: Arial, sans-serif; font-size: 0.9rem; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
@@ -585,7 +567,6 @@ elif st.session_state['role'] == 'client':
             """
             st.markdown(html_pl_header, unsafe_allow_html=True)
 
-            # SECTION B: INTEGRATED PACKING LIST TABLE (Mirroring CA286172_LB1156.pdf Columns)
             html_pl_table = """
             <table class='custom-table'>
                 <thead>
@@ -608,26 +589,14 @@ elif st.session_state['role'] == 'client':
 
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
-                ordered_cases = int(row['Ordered_Cases'])
-                missing_cases = int(row['Missing_Cases'])
-                statut_fr = str(row['Status']) # Utilisation des données sources du pkl
-                date = str(row['Availability']).replace(" (Partiel)", "") # Utilisation des données sources du pkl
+                ordered_cases = int(row['Qte_Demandée'])
+                missing_cases = int(row['Manquant'])
+                statut_fr = str(row['Statut']) 
+                date = str(row['Date_Disponibilité']).replace(" (Partiel)", "")
                 
-                # Récupération nomenclature pour enrichir l'affichage style CA286172_LB1156.pdf
                 d = dict_details.get(art, {'poids': 0.0, 'uc': 6, 'cas_pal': 100, 'libelle': 'Unknown Item', 'format': ''})
                 
-                # Calculs basés sur la commande totale demandée (Qte_Demandée)
                 units = int(ordered_cases * d['uc'])
-                
-                # Simulation de poids un peu plus réaliste que 1kg/carton pour Belaire (environ 1.5kg/btl pleine 75cl + verre)
-                # Le PDF CA286172_LB1156.pdf a des poids très bizarres. Utilisons 1.5kg par bouteille unitaire pour la simulation.
-                # poids_btl_simulated = d['poids'] if d['poids'] > 0 else 1.5 
-                # poids_final = weight * d['uc'] # This weight seems to be what PL generator uses? No, PL uses qte * d['poids'].
-                # t_p += qte * d['poids'] (Turn 56 Packing List ZIP generator logic)
-                # Let's use the actual weight calculation from turn 56 ZIP generator.
-                # Row ordered cases *uc * bottle weight. BUT simulation data doesn't have bottle weight cleanly available.
-                
-                # RETHINK poids simulation: Let's use ordered_cases * uc * simulated_btl_weight (1.5kg).
                 poids_simule = units * 1.5
                 
                 t_units_total += units
@@ -637,19 +606,16 @@ elif st.session_state['role'] == 'client':
                 cartons_palettes = d['cas_pal'] if d['cas_pal'] > 0 else 100.0
                 t_palettes += ordered_cases / cartons_palettes
 
-                # Description construction (Style CA286172_LB1156.pdf)
                 libelle = d['libelle']
                 fmt = d['format']
                 description = f"<b>{libelle}</b>"
                 if fmt: description += f"<br><span style='font-size: 0.8rem; color: #555;'>Fmt: {fmt}</span>"
                 
-                # --- NOUVEAUTÉ : Affichage de la quantité manquante en rouge ---
                 if missing_cases > 0:
                     cases_html = f"<b>{ordered_cases}</b><br><span style='color:#d93025; font-size:0.75rem; font-weight:600;'>⚠ {missing_cases} missing</span>"
                 else:
                     cases_html = f"<b>{ordered_cases}</b>"
 
-                # Pillule de statut simplifiée image_0.png style
                 if statut_fr == "Rupture": pill = "<span class='badge-blocked'>Out</span>"
                 elif "Attente Prod" in statut_fr: pill = "<span class='badge-pending'>Prod</span>"
                 else: pill = "<span class='badge-ready'>Hand</span>"
@@ -667,19 +633,16 @@ elif st.session_state['role'] == 'client':
             html_table += "</tbody></table>"
             st.markdown(html_pl_table, unsafe_allow_html=True)
 
-            # SECTION C: TOTALS (Mirroring CA286172_LB1156.pdf totals section)
             total_pallets_rounded = int(math.ceil(t_palettes))
-            pallet_type_hardcoded = "VMF" # hardcoded simulation from CA286172_LB1156.pdf
+            pallet_type_hardcoded = "VMF" 
             
-            # Check order readiness logic (V56 style for "ASAP")
-            all_statuses = lignes['Status'].values
+            all_statuses = lignes['Statut'].values
             if 'Rupture' in all_statuses: global_avail_display = "<span style='color: #d93025; font-weight: bold;'>TBD (Missing Items)</span>"
             elif any('Attente Prod' in s for s in all_statuses): 
-                # Find furthest date
                 furthest_date = None
                 for _, row_date in lignes.iterrows():
-                    if "Pas de date" in row_date['Availability']: continue
-                    clean_date_str = row_date['Availability'].replace(" (Partiel)", "").replace("Immediate", "").replace("TBD", "")
+                    if "Pas de date" in row_date['Date_Disponibilité']: continue
+                    clean_date_str = row_date['Date_Disponibilité'].replace(" (Partiel)", "").replace("Immédiate", "").replace("Pas de date", "")
                     if not clean_date_str: continue
                     try:
                          date_obj = datetime.strptime(clean_date_str, "%d/%m/%Y")
@@ -708,11 +671,9 @@ elif st.session_state['role'] == 'client':
             """
             st.markdown(html_pl_totals, unsafe_allow_html=True)
             
-            # SECTION D: BOUTONS D'ACTION UNITAIRES POUR CETTE COMMANDE (image_0.png style)
             st.markdown("<br>", unsafe_allow_html=True)
             col_a1, col_a2 = st.columns([1, 1])
             col_a1.button(f"📅 View RDV Doc", key=f"rdv_{cmd}", use_container_width=True, disabled=True)
             col_a2.button(f"✉ Fwd Tracking Info", key=f"track_{cmd}", use_container_width=True, disabled=True)
-
 
     st.markdown('</div>', unsafe_allow_html=True)
