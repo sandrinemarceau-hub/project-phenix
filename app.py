@@ -34,13 +34,13 @@ if 'role' not in st.session_state:
 PASS_ADMIN = st.secrets.get("PASS_ADMIN", "Logistique2026!")
 PASS_CLIENT = st.secrets.get("PASS_CLIENT", "ClientSovereign!")
 
-# --- ECRAN DE CONNEXION ---
+# --- ECRAN DE CONNEXION (EN ANGLAIS) ---
 if st.session_state['role'] is None:
-    st.title("🔐 Portail d'Accès Logistique")
-    st.write("Veuillez entrer votre mot de passe pour accéder à votre espace.")
-    pwd = st.text_input("Mot de passe", type="password")
+    st.title("🔐 Logistics Access Portal")
+    st.write("Please enter your password to access your space.")
+    pwd = st.text_input("Password", type="password")
     
-    if st.button("Connexion", type="primary"):
+    if st.button("Login", type="primary"):
         if pwd == PASS_ADMIN:
             st.session_state['role'] = 'admin'
             st.rerun()
@@ -48,13 +48,13 @@ if st.session_state['role'] is None:
             st.session_state['role'] = 'client'
             st.rerun()
         else:
-            st.error("Mot de passe incorrect. / Incorrect password.")
+            st.error("Incorrect password.")
     st.stop()
 
 # --- BOUTON DÉCONNEXION ---
 with st.sidebar:
     if st.session_state['role'] == 'admin':
-        if st.button("🚪 Déconnexion"):
+        if st.button("🚪 Déconnexion (Admin)"):
             st.session_state.clear()
             st.rerun()
     elif st.session_state['role'] == 'client':
@@ -121,7 +121,7 @@ def lire_fichier(fichier, lignes_a_ignorer):
 if FPDF_OK:
     class RDVPDF(FPDF):
         def header(self):
-            self.ln(35); self.set_font("Helvetica", "B", 24); self.cell(0, 15, 'RDV DOCUMENT', 0, 1, 'C'); self.ln(2)
+            self.ln(35); self.set_font("Helvetica", "B", 24); self.cell(0, 15, 'COLLECTION APPOINTMENT', 0, 1, 'C'); self.ln(2)
         def get_lines_count(self, w, line_height, text):
             try: return len(self.multi_cell(w, line_height, text, split_only=True))
             except:
@@ -144,7 +144,6 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
     ville = clean_nan(lignes.iloc[0]['Ville'])
     pays = clean_nan(lignes.iloc[0]['Pays'])
 
-    # --- LOGIQUE INTELLIGENTE DE L'EXPORTATEUR ---
     pays_upper = str(pays).upper()
     if "USA" in pays_upper or "ETATS" in pays_upper or "CANADA" in pays_upper:
         exp_text = app_settings.get('exp_usa', '')
@@ -198,7 +197,7 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
         
         desc_html = f"<b>{safe_xml(d['libelle'])}</b>"
         sub1 = []
-        if d['format']: sub1.append(f"Fmt: {safe_xml(d['format'])}")
+        if d['format']: sub1.append(f"Size: {safe_xml(d['format'])}")
         if sub1: desc_html += f"<br/><font color='#555555'>{' | '.join(sub1)}</font>"
         
         data.append([str(qte), safe_xml(art), Paragraph(desc_html, style_desc), str(units), format_num(poids_ligne)])
@@ -240,9 +239,11 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
                 d_obj = datetime.strptime(d_str, "%d/%m/%Y")
                 if pire_date_obj is None or d_obj > pire_date_obj: pire_date_obj = d_obj
             except: pass
-    if en_rupture: date_finale = "A DEFINIR (Rupture Partielle)"
+            
+    # TRADUCTION STRICTE EN ANGLAIS POUR LE PDF
+    if en_rupture: date_finale = "TBD (Partial Out of Stock)"
     elif pire_date_obj: date_finale = pire_date_obj.strftime("%d/%m/%Y")
-    else: date_finale = "ASAP (En Stock)"
+    else: date_finale = "ASAP (In Stock)"
 
     t_poids = 0.0; t_palettes = 0.0
     for _, r in lignes.iterrows():
@@ -260,24 +261,25 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     if not FPDF_OK: return b""
     
     pdf = RDVPDF(); pdf.add_page(); pdf.set_font("Helvetica", "B", 14)
-    txt_noir = "Available for collection on : "; txt_rouge = date_finale
+    txt_noir = "Available for collection on: "; txt_rouge = date_finale
     largeur_totale = pdf.get_string_width(txt_noir) + pdf.get_string_width(txt_rouge)
     pdf.set_x((pdf.w - largeur_totale) / 2); pdf.set_text_color(0, 0, 0); pdf.cell(pdf.get_string_width(txt_noir), 10, txt_noir)
     pdf.set_text_color(200, 0, 0); pdf.cell(pdf.get_string_width(txt_rouge), 10, txt_rouge, 0, 1); pdf.set_text_color(0, 0, 0); pdf.ln(10)
     
-    pdf.draw_harmonized_row("Pick Up address / Adresse d'enlèvement", adresse_enlevement)
-    pdf.draw_harmonized_row("Loading Hours / Horaires d'ouverture", app_settings['horaires'])
+    # LIGNES TRADUITES
+    pdf.draw_harmonized_row("Pick Up Address", adresse_enlevement)
+    pdf.draw_harmonized_row("Loading Hours", app_settings['horaires'])
     pdf.draw_harmonized_row("Contact", app_settings['contact'])
-    pdf.draw_harmonized_row("Order number / Numéro de commande", str(cmd))
-    pdf.draw_harmonized_row("Country of delivery", pays)
-    pdf.draw_harmonized_row("Customer / Client", client)
-    pdf.draw_harmonized_row("Number and size of pallets", f"{int(math.ceil(t_palettes))} Palettes")
-    pdf.draw_harmonized_row("Total Weight / Poids", f"{format_num(t_poids)} KG")
-    pdf.draw_harmonized_row("Shipping costs / Frais de port", "-")
+    pdf.draw_harmonized_row("Order Number", str(cmd))
+    pdf.draw_harmonized_row("Country of Delivery", pays)
+    pdf.draw_harmonized_row("Customer", client)
+    pdf.draw_harmonized_row("Number of Pallets", f"{int(math.ceil(t_palettes))} Pallet(s)")
+    pdf.draw_harmonized_row("Total Weight", f"{format_num(t_poids)} KG")
+    pdf.draw_harmonized_row("Shipping Costs", "-")
+    
     pdf.ln(15); pdf.set_font("Helvetica", "B", 8.5); pdf.set_text_color(200, 0, 0)
-    w_en = "Reminder : we need a 48 hours delay to prepare the order before collection. ALL SHIPPER COMING WITHOUT AN APPOINTMENT AND NOT RESPECTING OUR 48 HOURS DELAY WILL BE REFUSED AND NOT LOADED."
-    w_fr = "Pour rappel : un délai de 48h est nécessaire afin que notre entrepôt prépare la commande avant le chargement. TOUT TRANSPORTEUR SE PRÉSENTANT SANS RDV ET SANS RESPECTER CE DÉLAI SERA REFUSÉ ET NON CHARGÉ."
-    pdf.multi_cell(0, 5, w_en, align='C'); pdf.ln(5); pdf.multi_cell(0, 5, w_fr, align='C')
+    w_en = "Reminder: We require a 48-hour notice to prepare the order before collection. ANY CARRIER ARRIVING WITHOUT AN APPOINTMENT OR FAILING TO RESPECT THIS NOTICE PERIOD WILL BE REFUSED AND NOT LOADED."
+    pdf.multi_cell(0, 5, w_en, align='C')
     return pdf.output(dest="S").encode("latin-1")
 
 def generer_packing_lists_zip(df_resultats, dict_details, app_settings):
@@ -309,7 +311,7 @@ if st.session_state['role'] == 'admin':
     with st.sidebar:
         st.write("📝 **Paramètres d'Enlèvement**")
         pdf_contact = st.text_input("Contact Email", "logistique@sovereignbrands.com")
-        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Lundi - Vendredi)")
+        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Monday - Friday)") # Traduit par défaut
         pdf_adresse_veuve = st.text_area("Adresse (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
         st.divider()
@@ -485,7 +487,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V62 (CORRECTION PDF UNITAIRES)
+# ESPACE CLIENT (FRONT OFFICE) - V63 (100% ENGLISH)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
