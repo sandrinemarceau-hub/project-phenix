@@ -609,7 +609,7 @@ elif st.session_state['role'] == 'client':
         titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
         with st.expander(titre_accordian):
-            html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Cases)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
+            html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Bottles)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
             
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
