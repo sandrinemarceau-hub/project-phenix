@@ -34,7 +34,7 @@ if 'role' not in st.session_state:
 PASS_ADMIN = st.secrets.get("PASS_ADMIN", "Logistique2026!")
 PASS_CLIENT = st.secrets.get("PASS_CLIENT", "ClientSovereign!")
 
-# --- ECRAN DE CONNEXION (EN ANGLAIS) ---
+# --- ECRAN DE CONNEXION ---
 if st.session_state['role'] is None:
     st.title("🔐 Logistics Access Portal")
     st.write("Please enter your password to access your space.")
@@ -143,6 +143,7 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
     adresse = clean_nan(lignes.iloc[0]['Adresse'])
     ville = clean_nan(lignes.iloc[0]['Ville'])
     pays = clean_nan(lignes.iloc[0]['Pays'])
+    ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
 
     pays_upper = str(pays).upper()
     if "USA" in pays_upper or "ETATS" in pays_upper or "CANADA" in pays_upper:
@@ -169,7 +170,11 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
     style_title = ParagraphStyle('T', parent=styles['Title'], fontSize=22, alignment=2)
     
     elements.append(Paragraph("PACKING LIST", style_title))
-    elements.append(Paragraph(f"<b>Order Ref:</b> {cmd}", style_header))
+    
+    header_str = f"<b>Order Ref:</b> {cmd}"
+    if ref_client: header_str += f" | <b>PO / Client Ref:</b> {safe_xml(ref_client)}"
+    elements.append(Paragraph(header_str, style_header))
+    
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width=18.5*cm, thickness=1.5, color=colors.black, spaceAfter=15, hAlign='CENTER'))
     
@@ -240,7 +245,6 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
                 if pire_date_obj is None or d_obj > pire_date_obj: pire_date_obj = d_obj
             except: pass
             
-    # TRADUCTION STRICTE EN ANGLAIS POUR LE PDF
     if en_rupture: date_finale = "TBD (Partial Out of Stock)"
     elif pire_date_obj: date_finale = pire_date_obj.strftime("%d/%m/%Y")
     else: date_finale = "ASAP (In Stock)"
@@ -256,6 +260,7 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
 
     client = str(lignes.iloc[0]['Client'])
     pays = clean_nan(lignes.iloc[0]['Pays'])
+    ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
     adresse_enlevement = app_settings['adresse_veuve']
 
     if not FPDF_OK: return b""
@@ -266,11 +271,12 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     pdf.set_x((pdf.w - largeur_totale) / 2); pdf.set_text_color(0, 0, 0); pdf.cell(pdf.get_string_width(txt_noir), 10, txt_noir)
     pdf.set_text_color(200, 0, 0); pdf.cell(pdf.get_string_width(txt_rouge), 10, txt_rouge, 0, 1); pdf.set_text_color(0, 0, 0); pdf.ln(10)
     
-    # LIGNES TRADUITES
     pdf.draw_harmonized_row("Pick Up Address", adresse_enlevement)
     pdf.draw_harmonized_row("Loading Hours", app_settings['horaires'])
     pdf.draw_harmonized_row("Contact", app_settings['contact'])
     pdf.draw_harmonized_row("Order Number", str(cmd))
+    if ref_client:
+        pdf.draw_harmonized_row("Customer PO / Ref", ref_client)
     pdf.draw_harmonized_row("Country of Delivery", pays)
     pdf.draw_harmonized_row("Customer", client)
     pdf.draw_harmonized_row("Number of Pallets", f"{int(math.ceil(t_palettes))} Pallet(s)")
@@ -311,7 +317,7 @@ if st.session_state['role'] == 'admin':
     with st.sidebar:
         st.write("📝 **Paramètres d'Enlèvement**")
         pdf_contact = st.text_input("Contact Email", "logistique@sovereignbrands.com")
-        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Monday - Friday)") # Traduit par défaut
+        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Monday - Friday)") 
         pdf_adresse_veuve = st.text_area("Adresse (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
         st.divider()
@@ -405,11 +411,25 @@ if st.session_state['role'] == 'admin':
                     else: productions_futures = []
 
                     df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd); colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True); df_commandes_brut.columns = colonnes_cmd
+                    
+                    # --- NOUVEAUTÉ : DETECTION DE LA REFERENCE CLIENT (PO NUMBER) ---
                     col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None); col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
                     col_qte_cmd = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None); col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
                     col_client = next((c for c in ['EXPENOMCLIENT', 'CLIENT', 'NOMCLIENT'] if c in colonnes_cmd), None); col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
                     col_ville = next((c for c in colonnes_cmd if 'VILLE' in c or 'CITY' in c), None); col_pays = next((c for c in colonnes_cmd if 'PAYS' in c or 'COUNTRY' in c), None); col_exportateur = next((c for c in colonnes_cmd if 'EXPORT' in c or 'SOCIETE' in c or 'FILIALE' in c or 'STEAPP' in c), None)
-                    df_commandes = pd.DataFrame(); df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd]); df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce'); df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd]); df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'; df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'; df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""; df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""; df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""; df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
+                    col_ref_client = next((c for c in ['REFCLIENT', 'REFERENCECLIENT', 'PO', 'CDECLIENT', 'CUSTOMERREF', 'VOTREREF'] if c in colonnes_cmd), None)
+                    
+                    df_commandes = pd.DataFrame()
+                    df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
+                    df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
+                    df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
+                    df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
+                    df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
+                    df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
+                    df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
+                    df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
+                    df_commandes['EXPORTATEUR'] = df_commandes_brut[col_exportateur] if col_exportateur else "DEFAUT"
+                    df_commandes['REF_CLIENT'] = df_commandes_brut[col_ref_client].astype(str).replace('nan', '', regex=True).replace('None', '', regex=True) if col_ref_client else ""
                     df_commandes = df_commandes.dropna(subset=['DATE_CDE']).sort_values(by=['DATE_CDE'])
 
                     def get_cascade_prepas(art_code):
@@ -449,6 +469,7 @@ if st.session_state['role'] == 'admin':
                         
                         resultats.append({
                             'Num_Commande': commande['NUM_CDE'], 
+                            'Ref_Client': clean_nan(commande['REF_CLIENT']),
                             'Date_Commande': commande['DATE_CDE'], 
                             'Client': commande['CLIENT'], 
                             'Article': article, 
@@ -473,7 +494,7 @@ if st.session_state['role'] == 'admin':
                     st.success("✅ Calcul terminé ! La base a été sauvegardée et est maintenant visible par les clients sur le Front Office.")
                     
                     df_admin_view = df_final.copy()
-                    df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés'}, inplace=True)
+                    df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés', 'Ref_Client': 'Référence_Client'}, inplace=True)
                     colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
                     st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
                     
@@ -487,7 +508,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V63 (100% ENGLISH)
+# ESPACE CLIENT (FRONT OFFICE)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
@@ -542,22 +563,36 @@ elif st.session_state['role'] == 'client':
     
     def preparer_excel_client(df_source):
         colonnes_dispos = df_source.columns.tolist()
-        cols_a_garder = ['Num_Commande', 'Client', 'Pays', 'Article', 'Qte_Demandée', 'Manquant', 'Statut', 'Date_Disponibilité']
-        if 'Date_Commande' in colonnes_dispos:
-            cols_a_garder.insert(1, 'Date_Commande')
-            df_client = df_source[cols_a_garder].copy()
-            df_client.columns = ['Order_No', 'Order_Date', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
-        else:
-            df_client = df_source[cols_a_garder].copy()
-            df_client.columns = ['Order_No', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
+        cols_a_garder = ['Num_Commande']
+        if 'Date_Commande' in colonnes_dispos: cols_a_garder.append('Date_Commande')
+        if 'Ref_Client' in colonnes_dispos: cols_a_garder.append('Ref_Client')
+        cols_a_garder.extend(['Client', 'Pays', 'Article', 'Qte_Demandée', 'Manquant', 'Statut', 'Date_Disponibilité'])
+        
+        df_client = df_source[cols_a_garder].copy()
+        
+        rename_map = {
+            'Num_Commande': 'Order_No',
+            'Date_Commande': 'Order_Date',
+            'Ref_Client': 'PO_Number',
+            'Client': 'Customer',
+            'Pays': 'Country',
+            'Article': 'SKU',
+            'Qte_Demandée': 'Ordered_Cases',
+            'Manquant': 'Missing_Cases',
+            'Statut': 'Status',
+            'Date_Disponibilité': 'Availability_Date'
+        }
+        df_client.rename(columns=rename_map, inplace=True)
             
         def translate_status(s):
             if "Rupture" in s: return "Out of stock"
             if "Attente Prod" in s: return "In Production"
             return "Ready"
             
-        df_client['Status'] = df_client['Status'].apply(translate_status)
-        df_client['Availability_Date'] = df_client['Availability_Date'].astype(str).str.replace(" (Partiel)", "").replace({'Immédiate': 'Immediate', 'Pas de date': 'TBD'})
+        if 'Status' in df_client.columns:
+            df_client['Status'] = df_client['Status'].apply(translate_status)
+        if 'Availability_Date' in df_client.columns:
+            df_client['Availability_Date'] = df_client['Availability_Date'].astype(str).str.replace(" (Partiel)", "").replace({'Immédiate': 'Immediate', 'Pas de date': 'TBD'})
         return df_client
 
     df_client_export = preparer_excel_client(df_final)
@@ -609,7 +644,13 @@ elif st.session_state['role'] == 'client':
         titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
         with st.expander(titre_accordian):
-            html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Bottles)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
+            
+            # Affichage de la référence client sous le titre dans l'accordéon
+            ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
+            if ref_client:
+                st.markdown(f"<span style='color:#6b778c; font-size:0.9rem;'><strong>PO / Ref:</strong> {ref_client}</span><br><br>", unsafe_allow_html=True)
+
+            html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Cases)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
             
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
