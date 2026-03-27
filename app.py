@@ -392,10 +392,8 @@ if st.session_state['role'] == 'admin':
                     colonnes_a_afficher = [c for c in df_final.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
                     st.dataframe(df_final[colonnes_a_afficher], use_container_width=True)
                     
-                    # --- NOUVEAU : BOUTON EXCEL CÔTÉ ADMIN ---
                     buf_admin = io.BytesIO()
-                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer:
-                        df_final.to_excel(writer, index=False)
+                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_final.to_excel(writer, index=False)
                     st.download_button("📥 Télécharger le Résultat Global (Excel)", data=buf_admin.getvalue(), file_name="Resultat_Global_Logistique.xlsx", type="primary", use_container_width=True)
                     
                 except Exception as e:
@@ -404,7 +402,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V54 (SAAS UI & MOBILE)
+# ESPACE CLIENT (FRONT OFFICE) - V55 (SAAS UI + MISSING QTY)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
@@ -488,7 +486,6 @@ elif st.session_state['role'] == 'client':
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Ligne des boutons PDF
     col_p1, col_p2, col_p3 = st.columns([2, 1.5, 1.5])
     if REPORTLAB_OK and not df_final.empty:
         zip_pack = generer_packing_lists_zip(df_final, dict_details)
@@ -528,15 +525,28 @@ elif st.session_state['role'] == 'client':
             for _, row in lignes.iterrows():
                 art = str(row['Article'])
                 qte = int(row['Qte_Demandée'])
+                manquant = int(row['Manquant'])
                 statut_fr = str(row['Statut'])
                 date = str(row['Date_Disponibilité']).replace(" (Partiel)", "")
                 libelle = dict_details.get(art, {}).get('libelle', 'Unknown Item')
                 
-                if statut_fr == "Rupture": pill = "<span class='badge-blocked'>Out of stock</span>"; date_display = "TBD"
-                elif "Attente Prod" in statut_fr: pill = "<span class='badge-pending'>In Production</span>"; date_display = date
-                else: pill = "<span class='badge-ready'>On Hand</span>"; date_display = "Immediate"
+                # --- NOUVEAUTÉ : Affichage de la quantité manquante en rouge ---
+                if manquant > 0:
+                    qty_html = f"<b>{qte}</b><br><span style='color:#d93025; font-size:0.75rem; font-weight:600;'>⚠ {manquant} missing</span>"
+                else:
+                    qty_html = f"<b>{qte}</b>"
 
-                html_table += f"<tr><td><span class='item-name'>{libelle}</span><span class='item-sku'>SKU: {art}</span></td><td><b>{qte}</b></td><td>{date_display}</td><td>{pill}</td></tr>"
+                if statut_fr == "Rupture": 
+                    pill = "<span class='badge-blocked'>Out of stock</span>"
+                    date_display = "TBD"
+                elif "Attente Prod" in statut_fr: 
+                    pill = "<span class='badge-pending'>In Production</span>"
+                    date_display = date
+                else: 
+                    pill = "<span class='badge-ready'>On Hand</span>"
+                    date_display = "Immediate"
+
+                html_table += f"<tr><td><span class='item-name'>{libelle}</span><span class='item-sku'>SKU: {art}</span></td><td>{qty_html}</td><td>{date_display}</td><td>{pill}</td></tr>"
             html_table += "</tbody></table></div>"
             st.markdown(html_table, unsafe_allow_html=True)
 
