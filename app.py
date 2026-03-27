@@ -414,7 +414,7 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V59 (CORRECTION VARIABLE NAMEERROR)
+# ESPACE CLIENT (FRONT OFFICE) - V60 (CORRECTION HTML MARKDOWN & TITRE)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
@@ -528,57 +528,20 @@ elif st.session_state['role'] == 'client':
             
         items_count = len(lignes)
 
-        if statut_cmd == 'Fulfilled': badge_html = f"<span class='badge-ready'>Fulfilled</span>"
-        elif statut_cmd == 'Pending': badge_html = f"<span class='badge-pending'>Pending</span>"
-        else: badge_html = f"<span class='badge-blocked'>Unfulfilled</span>"
+        # CORRECTIF 1 : Le titre Streamlit n'accepte pas de code HTML, on utilise des emojis purs
+        if statut_cmd == 'Fulfilled': badge_text = "🟢 Ready"
+        elif statut_cmd == 'Pending': badge_text = "🟡 Pending"
+        else: badge_text = "🔴 Unfulfilled"
 
-        titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_html}"
+        titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
         with st.expander(titre_accordian):
-            html_pl_header = f"""
-            <div style="font-family: Arial, sans-serif; font-size: 0.9rem; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                    <div>
-                        <span style="font-size: 1.3rem; font-weight: bold;">PACKING LIST</span><br>
-                        <strong>Order Ref:</strong> {cmd}<br>
-                    </div>
-                    <div style="text-align: right;">
-                        <strong>Order Date:</strong> {order_date_simulated}<br>
-                        <strong>Country:</strong> {pays_nom_display}
-                    </div>
-                </div>
-                <div style="display: flex; gap: 40px; margin-top: 15px;">
-                    <div style="flex: 1;">
-                        <strong>EXPORTER:</strong><br>
-                        SOVEREIGN BRANDS, LLC<br>
-                        1300 Old Skokie Valley Rd, Suite A<br>
-                        Highland Park, IL 60035, USA
-                    </div>
-                    <div style="flex: 1;">
-                        <strong>CONSIGNEE:</strong><br>
-                        {client_nom}<br>
-                        (Address data simulated from Commandes file)<br>
-                        {pays_nom_display}
-                    </div>
-                </div>
-            </div>
-            """
+            # CORRECTIF 2 : Tout le HTML est écrit sur une seule longue ligne ou sans indentations
+            # pour éviter que Streamlit ne le transforme en bloc de code gris !
+            html_pl_header = f"""<div style="font-family: Arial, sans-serif; font-size: 0.9rem; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px;"><div style="display: flex; justify-content: space-between; align-items: start;"><div><span style="font-size: 1.3rem; font-weight: bold;">PACKING LIST</span><br><strong>Order Ref:</strong> {cmd}<br></div><div style="text-align: right;"><strong>Order Date:</strong> {order_date_simulated}<br><strong>Country:</strong> {pays_nom_display}</div></div><div style="display: flex; gap: 40px; margin-top: 15px;"><div style="flex: 1;"><strong>EXPORTER:</strong><br>SOVEREIGN BRANDS, LLC<br>1300 Old Skokie Valley Rd, Suite A<br>Highland Park, IL 60035, USA</div><div style="flex: 1;"><strong>CONSIGNEE:</strong><br>{client_nom}<br>(Address data simulated from Commandes file)<br>{pays_nom_display}</div></div></div>"""
             st.markdown(html_pl_header, unsafe_allow_html=True)
 
-            html_pl_table = """
-            <table class='custom-table'>
-                <thead>
-                    <tr>
-                        <th style="width: 10%;">CASES</th>
-                        <th style="width: 15%;">SKU</th>
-                        <th style="width: 40%;">DESCRIPTION</th>
-                        <th style="width: 10%;">UNITS</th>
-                        <th style="width: 15%;">NET WGT (kg)</th>
-                        <th style="width: 10%;">STATUS</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
+            html_pl_table = "<table class='custom-table'><thead><tr><th style='width: 10%;'>CASES</th><th style='width: 15%;'>SKU</th><th style='width: 40%;'>DESCRIPTION</th><th style='width: 10%;'>UNITS</th><th style='width: 15%;'>NET WGT (kg)</th><th style='width: 10%;'>STATUS</th></tr></thead><tbody>"
             
             t_units_total = 0
             t_cases_total = 0
@@ -618,17 +581,8 @@ elif st.session_state['role'] == 'client':
                 elif "Attente Prod" in statut_fr: pill = "<span class='badge-pending'>Prod</span>"
                 else: pill = "<span class='badge-ready'>Hand</span>"
 
-                html_pl_table += f"""
-                <tr>
-                    <td>{cases_html}</td>
-                    <td style='vertical-align: top;'>{art}</td>
-                    <td>{description}</td>
-                    <td style="text-align: right;">{units}</td>
-                    <td style="text-align: right;">{format_num(poids_simule)}</td>
-                    <td>{pill}</td>
-                </tr>
-                """
-            # --- LA CORRECTION EST ICI ---
+                html_pl_table += f"<tr><td>{cases_html}</td><td style='vertical-align: top;'>{art}</td><td>{description}</td><td style='text-align: right;'>{units}</td><td style='text-align: right;'>{format_num(poids_simule)}</td><td>{pill}</td></tr>"
+                
             html_pl_table += "</tbody></table>"
             st.markdown(html_pl_table, unsafe_allow_html=True)
 
@@ -652,22 +606,7 @@ elif st.session_state['role'] == 'client':
             else: 
                 global_avail_display = "<span style='color: #1e8e3e; font-weight: bold;'>Immediate (ASAP)</span>"
 
-            html_pl_totals = f"""
-            <div style="font-family: Arial, sans-serif; font-size: 1rem; font-weight: bold; border: 2px solid black; padding: 15px; margin-top: 15px; display: flex; justify-content: space-between; align-items: start;">
-                <div style="flex: 1;">
-                    TOTAL UNITS: {t_units_total}<br>
-                    TOTAL CASES: {t_cases_total}
-                </div>
-                <div style="flex: 1;">
-                    TOTAL NET WEIGHT: {format_num(t_weight_total)} kg<br>
-                    TOTAL PALLETS: {total_pallets_rounded} ({pallet_type_hardcoded} Simulation)
-                </div>
-                <div style="flex: 1; text-align: right; font-size: 1.1rem; border-left: 2px solid black; padding-left: 15px;">
-                    AVAILABLE FOR COLLECTION ON:<br>
-                    {global_avail_display}
-                </div>
-            </div>
-            """
+            html_pl_totals = f"""<div style="font-family: Arial, sans-serif; font-size: 1rem; font-weight: bold; border: 2px solid black; padding: 15px; margin-top: 15px; display: flex; justify-content: space-between; align-items: start;"><div style="flex: 1;">TOTAL UNITS: {t_units_total}<br>TOTAL CASES: {t_cases_total}</div><div style="flex: 1;">TOTAL NET WEIGHT: {format_num(t_weight_total)} kg<br>TOTAL PALLETS: {total_pallets_rounded} ({pallet_type_hardcoded} Simulation)</div><div style="flex: 1; text-align: right; font-size: 1.1rem; border-left: 2px solid black; padding-left: 15px;">AVAILABLE FOR COLLECTION ON:<br>{global_avail_display}</div></div>"""
             st.markdown(html_pl_totals, unsafe_allow_html=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
