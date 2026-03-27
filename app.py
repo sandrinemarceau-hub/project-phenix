@@ -391,13 +391,20 @@ if st.session_state['role'] == 'admin':
                     st.success("✅ Calcul terminé ! La base a été sauvegardée et est maintenant visible par les clients sur le Front Office.")
                     colonnes_a_afficher = [c for c in df_final.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
                     st.dataframe(df_final[colonnes_a_afficher], use_container_width=True)
+                    
+                    # --- NOUVEAU : BOUTON EXCEL CÔTÉ ADMIN ---
+                    buf_admin = io.BytesIO()
+                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer:
+                        df_final.to_excel(writer, index=False)
+                    st.download_button("📥 Télécharger le Résultat Global (Excel)", data=buf_admin.getvalue(), file_name="Resultat_Global_Logistique.xlsx", type="primary", use_container_width=True)
+                    
                 except Exception as e:
                     import traceback
                     st.error(f"Erreur : {e}\n{traceback.format_exc()}")
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V53 (SAAS UI & MOBILE)
+# ESPACE CLIENT (FRONT OFFICE) - V54 (SAAS UI & MOBILE)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
