@@ -389,11 +389,15 @@ if st.session_state['role'] == 'admin':
                     pd.to_pickle(cache_data, 'base_logistique.pkl')
                     
                     st.success("✅ Calcul terminé ! La base a été sauvegardée et est maintenant visible par les clients sur le Front Office.")
-                    colonnes_a_afficher = [c for c in df_final.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
-                    st.dataframe(df_final[colonnes_a_afficher], use_container_width=True)
+                    
+                    # --- NOUVEAUTÉ : Formatage propre pour l'Admin ---
+                    df_admin_view = df_final.copy()
+                    df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés'}, inplace=True)
+                    colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Exportateur']]
+                    st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
                     
                     buf_admin = io.BytesIO()
-                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_final.to_excel(writer, index=False)
+                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_admin_view.to_excel(writer, index=False)
                     st.download_button("📥 Télécharger le Résultat Global (Excel)", data=buf_admin.getvalue(), file_name="Resultat_Global_Logistique.xlsx", type="primary", use_container_width=True)
                     
                 except Exception as e:
@@ -402,43 +406,26 @@ if st.session_state['role'] == 'admin':
         else: st.warning("Veuillez déposer tous les fichiers.")
 
 # ==========================================
-# ESPACE CLIENT (FRONT OFFICE) - V55 (SAAS UI + MISSING QTY)
+# ESPACE CLIENT (FRONT OFFICE) - V56 (SAAS UI + MISSING QTY + EXCEL CLEAN)
 # ==========================================
 elif st.session_state['role'] == 'client':
     
-    # --- CSS MASSIVE INJECTION POUR LE LOOK SAAS + MOBILE ---
     st.markdown("""
         <style>
             #MainMenu, footer, header {visibility: hidden;}
             .block-container { padding-top: 1rem; max-width: 95%; }
             .stApp { background-color: #f4f5f7; }
-            
-            .main-panel {
-                background-color: white;
-                padding: 30px;
-                border-radius: 8px;
-                box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05);
-                margin-top: 20px;
-            }
-
+            .main-panel { background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05); margin-top: 20px; }
             .badge-ready { background-color: #e6f4ea; color: #1e8e3e; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
             .badge-pending { background-color: #fef7e0; color: #b06000; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
             .badge-blocked { background-color: #fce8e6; color: #d93025; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
-
             .custom-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: #333; margin-top: 10px; }
             .custom-table th { color: #6b778c; font-weight: 500; text-align: left; padding-bottom: 10px; border-bottom: 1px solid #dfe1e6; }
             .custom-table td { padding: 12px 0; border-bottom: 1px solid #f4f5f7; vertical-align: middle; }
             .item-name { font-weight: 600; color: #172b4d; display: block; }
             .item-sku { color: #7a869a; font-size: 0.8rem; }
-            
             div[data-testid="stExpander"] { border: 1px solid #dfe1e6 !important; border-radius: 4px !important; margin-bottom: 10px !important; background-color: white !important; box-shadow: none !important; }
-            
-            /* --- RÈGLES SPÉCIALES SMARTPHONE --- */
-            @media (max-width: 768px) {
-                .main-panel { padding: 15px; margin-top: 10px; }
-                .custom-table { display: block; overflow-x: auto; white-space: nowrap; } 
-                div[data-testid="stMetricValue"] {font-size: 1.5rem !important;} 
-            }
+            @media (max-width: 768px) { .main-panel { padding: 15px; margin-top: 10px; } .custom-table { display: block; overflow-x: auto; white-space: nowrap; } div[data-testid="stMetricValue"] {font-size: 1.5rem !important;} }
         </style>
     """, unsafe_allow_html=True)
 
@@ -465,23 +452,33 @@ elif st.session_state['role'] == 'client':
         if 'Rupture' in statuses: order_status_map[cmd] = 'Unfulfilled'
         elif any('Attente Prod' in s for s in statuses): order_status_map[cmd] = 'Pending'
         else: order_status_map[cmd] = 'Fulfilled'
-        
-    nb_total = len(order_status_map)
-    nb_pret = sum(1 for v in order_status_map.values() if v == 'Fulfilled')
-    nb_attente = sum(1 for v in order_status_map.values() if v == 'Pending')
-    nb_rupture = sum(1 for v in order_status_map.values() if v == 'Unfulfilled')
 
     col_search, col_space, col_btn1, col_btn2 = st.columns([3, 1, 1.5, 1.5])
     search_query = col_search.text_input("🔍 Search Order ID or Customer...", label_visibility="collapsed", placeholder="Search Order ID or Customer...")
     
-    mask_us_ca = df_final['Pays'].astype(str).str.upper().str.contains('ETATS|CANADA', regex=True, na=False)
+    # --- NOUVEAUTÉ : FORMATAGE DE L'EXCEL CLIENT EN ANGLAIS ---
+    def preparer_excel_client(df_source):
+        df_client = df_source[['Num_Commande', 'Client', 'Pays', 'Article', 'Qte_Demandée', 'Manquant', 'Statut', 'Date_Disponibilité']].copy()
+        df_client.columns = ['Order_No', 'Customer', 'Country', 'SKU', 'Ordered_Cases', 'Missing_Cases', 'Status', 'Availability_Date']
+        
+        def translate_status(s):
+            if "Rupture" in s: return "Out of stock"
+            if "Attente Prod" in s: return "In Production"
+            return "Ready"
+            
+        df_client['Status'] = df_client['Status'].apply(translate_status)
+        df_client['Availability_Date'] = df_client['Availability_Date'].astype(str).str.replace(" (Partiel)", "").replace({'Immédiate': 'Immediate', 'Pas de date': 'TBD'})
+        return df_client
+
+    df_client_export = preparer_excel_client(df_final)
+    mask_us_ca = df_client_export['Country'].astype(str).str.upper().str.contains('ETATS|CANADA', regex=True, na=False)
     
     buf_monde = io.BytesIO()
-    with pd.ExcelWriter(buf_monde, engine='openpyxl') as writer: df_final[~mask_us_ca].to_excel(writer, index=False)
+    with pd.ExcelWriter(buf_monde, engine='openpyxl') as writer: df_client_export[~mask_us_ca].to_excel(writer, index=False)
     col_btn1.download_button("Export ROW (Excel)", data=buf_monde.getvalue(), file_name="Orders_ROW.xlsx", use_container_width=True)
     
     buf_us = io.BytesIO()
-    with pd.ExcelWriter(buf_us, engine='openpyxl') as writer: df_final[mask_us_ca].to_excel(writer, index=False)
+    with pd.ExcelWriter(buf_us, engine='openpyxl') as writer: df_client_export[mask_us_ca].to_excel(writer, index=False)
     col_btn2.download_button("Export US/CA (Excel)", data=buf_us.getvalue(), file_name="Orders_US_CA.xlsx", use_container_width=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -511,8 +508,6 @@ elif st.session_state['role'] == 'client':
         elif "CANADA" in pays_nom.upper(): pays_nom_display = "Canada"
         else: pays_nom_display = pays_nom.capitalize()
 
-        nb_items = len(lignes)
-
         if statut_cmd == 'Fulfilled': badge_html = f"🟢 Ready"
         elif statut_cmd == 'Pending': badge_html = f"🟡 Pending"
         else: badge_html = f"🔴 Blocked"
@@ -530,7 +525,6 @@ elif st.session_state['role'] == 'client':
                 date = str(row['Date_Disponibilité']).replace(" (Partiel)", "")
                 libelle = dict_details.get(art, {}).get('libelle', 'Unknown Item')
                 
-                # --- NOUVEAUTÉ : Affichage de la quantité manquante en rouge ---
                 if manquant > 0:
                     qty_html = f"<b>{qte}</b><br><span style='color:#d93025; font-size:0.75rem; font-weight:600;'>⚠ {manquant} missing</span>"
                 else:
