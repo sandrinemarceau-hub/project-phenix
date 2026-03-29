@@ -336,7 +336,7 @@ if st.session_state['role'] == 'admin':
     st.write("Importez vos fichiers usine ici. Les résultats seront sauvegardés pour les clients.")
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=3)
+    with col1: fichier_stock = st.file_uploader("Fichier Stock", type=['xlsx', 'xls', 'csv']); skip_stock = st.number_input("Ignorer (Stock)", min_value=0, value=1)
     with col2: fichiers_prod = st.file_uploader("Fichiers Prod", type=['xlsx', 'xls', 'csv'], accept_multiple_files=True); skip_prod = st.number_input("Ignorer (Prod)", min_value=0, value=0)
     with col3: fichier_commandes = st.file_uploader("Fichier Cmds", type=['xlsx', 'xls', 'csv']); skip_cmd = st.number_input("Ignorer (Cmd)", min_value=0, value=0)
     with col4: fichiers_nom = st.file_uploader("Fichiers (Poids & Liens)", type=['xlsx', 'xls', 'csv'], accept_multiple_files=True); skip_nom = st.number_input("Ignorer (Nom.)", min_value=0, value=0)
