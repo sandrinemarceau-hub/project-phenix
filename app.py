@@ -378,7 +378,15 @@ if st.session_state['role'] == 'admin':
                     col_art_stock = next((c for c in ['CODEARTICLE', 'ARTICLECODE', 'ARTICLE', 'REFERENCE', 'CODE'] if c in df_stock_brut.columns), None)
                     col_qte_stock = next((c for c in ['STOCKPHYSIQUE', 'PHYSIQUE', 'STOCKDISPONIBLE', 'DISPONIBLE', 'QTEDISPO', 'QTESTOCK', 'QUANTITE', 'STOCK'] if c in df_stock_brut.columns), None)
                     if not col_art_stock or not col_qte_stock: st.error("❌ Erreur STOCK : Colonnes introuvables."); st.stop()
-                    df_stock = pd.DataFrame(); df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock]); df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0; stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
+                    
+                    df_stock = pd.DataFrame()
+                    df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
+                    df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
+                    
+                    # --- NOUVEAUTÉ : CONVERSION BOUTEILLES -> CARTONS (STOCK) ---
+                    df_stock['STOCK_DISPO'] = df_stock.apply(lambda r: r['STOCK_DISPO'] / (dict_details.get(r['CODE_ARTICLE'], {}).get('uc', 6.0) or 6.0), axis=1)
+                    
+                    stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
                     liste_prod = []; df_prod_brut_total = pd.DataFrame() 
                     for f in fichiers_prod:
@@ -404,7 +412,11 @@ if st.session_state['role'] == 'admin':
                                 if qte <= 0: qte = 99999
                                 for c in arts_cols:
                                     code = str(row[c])
-                                    if code and code not in ["0", "NAN", "NONE"]: liste_prod.append({'ARTICLE': code, 'QTE_PRODUITE': qte, 'DATE_PROD': d})
+                                    if code and code not in ["0", "NAN", "NONE"]: 
+                                        # --- NOUVEAUTÉ : CONVERSION BOUTEILLES -> CARTONS (PROD) ---
+                                        uc_prod = dict_details.get(code, {}).get('uc', 6.0) or 6.0
+                                        qte_cartons = qte / uc_prod
+                                        liste_prod.append({'ARTICLE': code, 'QTE_PRODUITE': qte_cartons, 'DATE_PROD': d})
                     if liste_prod:
                         df_production = pd.DataFrame(liste_prod); df_production['Date_Dispo_Reelle'] = df_production['DATE_PROD'] + timedelta(days=2); df_production = df_production.sort_values(by=['ARTICLE', 'Date_Dispo_Reelle'])
                         productions_futures = df_production.to_dict('records')
@@ -423,6 +435,10 @@ if st.session_state['role'] == 'admin':
                     df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
                     df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
                     df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd])
+                    
+                    # --- NOUVEAUTÉ : CONVERSION BOUTEILLES -> CARTONS (COMMANDES) ---
+                    df_commandes['QUANTITE'] = df_commandes.apply(lambda r: r['QUANTITE'] / (dict_details.get(r['ARTICLE_CODE'], {}).get('uc', 6.0) or 6.0), axis=1)
+
                     df_commandes['NUM_CDE'] = df_commandes_brut[col_num_cmd] if col_num_cmd else 'Inconnu'
                     df_commandes['CLIENT'] = df_commandes_brut[col_client] if col_client else 'Inconnu'
                     df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
