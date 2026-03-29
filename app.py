@@ -31,8 +31,8 @@ st.set_page_config(layout="wide", page_title="Sovereign Brands - Orders")
 if 'role' not in st.session_state:
     st.session_state['role'] = None
 
-PASS_ADMIN = st.secrets.get("PASS_ADMIN", "Logistique2026!")
-PASS_CLIENT = st.secrets.get("PASS_CLIENT", "ClientSovereign!")
+PASS_ADMIN = st.secrets.get("PASS_ADMIN")
+PASS_CLIENT = st.secrets.get("PASS_CLIENT")
 
 # --- ECRAN DE CONNEXION ---
 if st.session_state['role'] is None:
