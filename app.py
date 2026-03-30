@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 from datetime import timedelta, datetime
 import io
@@ -263,9 +263,6 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
         t_poids += units * (d['poids'] if d['poids'] > 0 else 1.5)
         t_palettes += qte / cas_pal if cas_pal > 0 else 0
 
-    # NOUVEAUTÉ ICI : On prend le destinataire (EXPE_NOM_CLIENT) pour la ligne Customer du RDV
-    client_rdv = str(lignes.iloc[0]['Client']) 
-    
     pays = clean_nan(lignes.iloc[0]['Pays'])
     ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
     adresse_enlevement = app_settings['adresse_veuve']
@@ -282,12 +279,14 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     pdf.draw_harmonized_row("Loading Hours", app_settings['horaires'])
     pdf.draw_harmonized_row("Contact", app_settings['contact'])
     pdf.draw_harmonized_row("Order Number", str(cmd))
-    if ref_client:
-        pdf.draw_harmonized_row("Customer PO / Ref", ref_client)
-    pdf.draw_harmonized_row("Country of Delivery", pays)
     
-    # Ligne Customer mise à jour avec le nom du destinataire
-    pdf.draw_harmonized_row("Customer", client_rdv)
+    # NOUVEAUTÉ ICI : On affiche la référence Client (Colonne E de votre fichier) sur la ligne Customer
+    if ref_client:
+        pdf.draw_harmonized_row("Customer", ref_client)
+    else:
+        pdf.draw_harmonized_row("Customer", "-")
+        
+    pdf.draw_harmonized_row("Country of Delivery", pays)
     
     pdf.draw_harmonized_row("Number of Pallets", f"{int(math.ceil(t_palettes))} Pallet(s)")
     pdf.draw_harmonized_row("Total Weight", f"{format_num(t_poids)} KG")
@@ -332,13 +331,13 @@ if st.session_state['role'] == 'admin':
         
         st.divider()
         st.write("📝 **Paramètres d'Enlèvement**")
-        pdf_contact = st.text_input("Contact Email", "sandrine.marceau@fpvd.fr")
-        pdf_horaires = st.text_input("Horaires", "08:00 - 12:00 ; 13:00 - 16:00 (Monday - Friday)") 
+        pdf_contact = st.text_input("Contact Email", "logistique@sovereignbrands.com")
+        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Monday - Friday)") 
         pdf_adresse_veuve = st.text_area("Adresse (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
         st.divider()
         st.write("🌍 **Adresses par défaut (Divers)**")
-        exp_row = st.text_area("Exportateur (Fallback Divers)", "SOVEREIGN BRANDS, LLC \n1300 Old Skokie Valley Rd, Suite A\nHighland Park, IL 60035, USA", height=80)
+        exp_row = st.text_area("Exportateur (Fallback Divers)", "SOVEREIGN BRANDS FRANCE\n10 Rue de la Logistique\n75000 Paris", height=80)
         
     settings_pdf = {
         'contact': pdf_contact, 'horaires': pdf_horaires, 'adresse_veuve': pdf_adresse_veuve, 'exp_row': exp_row
