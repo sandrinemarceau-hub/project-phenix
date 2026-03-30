@@ -331,13 +331,15 @@ if st.session_state['role'] == 'admin':
         
         st.divider()
         st.write("📝 **Paramètres d'Enlèvement**")
-        pdf_contact = st.text_input("Contact Email", "logistique@sovereignbrands.com")
-        pdf_horaires = st.text_input("Horaires", "08:00 - 16:00 (Monday - Friday)") 
+        # MODIFICATIONS DES VALEURS PAR DÉFAUT ICI :
+        pdf_contact = st.text_input("Contact Email", "sandrine.marceau@fpvd.fr")
+        pdf_horaires = st.text_input("Horaires", "8h00 - 12h00 ; 13h00 - 16h00") 
+        
         pdf_adresse_veuve = st.text_area("Adresse (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
         st.divider()
         st.write("🌍 **Adresses par défaut (Divers)**")
-        exp_row = st.text_area("Exportateur (Fallback Divers)", "SOVEREIGN BRANDS FRANCE\n10 Rue de la Logistique\n75000 Paris", height=80)
+        exp_row = st.text_area("Exportateur (Fallback Divers)", "FPVD / VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
     settings_pdf = {
         'contact': pdf_contact, 'horaires': pdf_horaires, 'adresse_veuve': pdf_adresse_veuve, 'exp_row': exp_row
