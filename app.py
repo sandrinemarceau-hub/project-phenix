@@ -444,8 +444,8 @@ if st.session_state['role'] == 'admin':
                     if not col_client_liv: col_client_liv = col_client_fact
                     
                     col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
-                    col_ville = next((c for c in colonnes_cmd if 'EXPEVILLE', 'VILLE', 'CITY'] if c in colonnes_cmd), None)
-                    col_pays = next((c for c in colonnes_cmd if 'EXPEPAYS', 'PAYS', 'COUNTRY'] if c in colonnes_cmd), None)
+                    col_ville = next((c for c in colonnes_cmd if any(k in c for k in ['EXPEVILLE', 'VILLE', 'CITY'])), None)
+                    col_pays = next((c for c in colonnes_cmd if any(k in c for k in ['EXPEPAYS', 'PAYS', 'COUNTRY'])), None)
                     
                     col_ref_client = next((c for c in ['REFCMDCLT', 'REFCLIENT', 'REFERENCECLIENT', 'PO', 'CDECLIENT', 'CUSTOMERREF', 'VOTREREF'] if c in colonnes_cmd), None)
                     
