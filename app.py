@@ -139,7 +139,7 @@ if FPDF_OK:
             self.set_xy(marge_x, y_curr + total_h)
 
 def generer_pl_unique(cmd, lignes, dict_details, app_settings):
-    # NOUVEAUTÉ : Distinction client facturé (pour entête) et livré (pour consignee)
+    # Distinction client facturé (pour entête) et livré (pour consignee)
     client_fact = str(lignes.iloc[0].get('Client_Facturation', lignes.iloc[0]['Client']))
     client_liv = str(lignes.iloc[0]['Client'])
     
@@ -150,7 +150,7 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
 
     client_fact_upper = client_fact.upper()
     
-    # NOUVEAUTÉ : ADRESSES DYNAMIQUES SELON L'ENTITÉ JURIDIQUE
+    # ADRESSES DYNAMIQUES SELON L'ENTITÉ JURIDIQUE
     if "SOVEREIGN BRANDS" in client_fact_upper or "LUC BELAIRE LLC" in client_fact_upper:
         exp_text_html = "SOVEREIGN BRANDS, LLC / Luc Belaire LLC<br/>1300 Old Skokie Valley Rd, Suite A<br/>Highland Park, IL 60035, USA"
     elif "LUC BELAIRE INTERNATIONAL" in client_fact_upper:
@@ -263,7 +263,9 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
         t_poids += units * (d['poids'] if d['poids'] > 0 else 1.5)
         t_palettes += qte / cas_pal if cas_pal > 0 else 0
 
-    client_fact = str(lignes.iloc[0].get('Client_Facturation', lignes.iloc[0]['Client']))
+    # NOUVEAUTÉ ICI : On prend le destinataire (EXPE_NOM_CLIENT) pour la ligne Customer du RDV
+    client_rdv = str(lignes.iloc[0]['Client']) 
+    
     pays = clean_nan(lignes.iloc[0]['Pays'])
     ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
     adresse_enlevement = app_settings['adresse_veuve']
@@ -283,7 +285,10 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     if ref_client:
         pdf.draw_harmonized_row("Customer PO / Ref", ref_client)
     pdf.draw_harmonized_row("Country of Delivery", pays)
-    pdf.draw_harmonized_row("Customer", client_fact)
+    
+    # Ligne Customer mise à jour avec le nom du destinataire
+    pdf.draw_harmonized_row("Customer", client_rdv)
+    
     pdf.draw_harmonized_row("Number of Pallets", f"{int(math.ceil(t_palettes))} Pallet(s)")
     pdf.draw_harmonized_row("Total Weight", f"{format_num(t_poids)} KG")
     pdf.draw_harmonized_row("Shipping Costs", "-")
@@ -390,7 +395,6 @@ if st.session_state['role'] == 'admin':
                     df_stock['CODE_ARTICLE'] = nettoyage_extreme(df_stock_brut[col_art_stock])
                     df_stock['STOCK_DISPO'] = nettoyage_quantite(df_stock_brut[col_qte_stock]) if col_qte_stock else 0
                     
-                    # --- CONVERSION BOUTEILLES -> CARTONS (STOCK) ---
                     df_stock['STOCK_DISPO'] = df_stock.apply(lambda r: r['STOCK_DISPO'] / (dict_details.get(r['CODE_ARTICLE'], {}).get('uc', 6.0) or 6.0), axis=1)
                     stock_actuel = df_stock.groupby('CODE_ARTICLE')['STOCK_DISPO'].sum().to_dict()
 
@@ -419,7 +423,6 @@ if st.session_state['role'] == 'admin':
                                 for c in arts_cols:
                                     code = str(row[c])
                                     if code and code not in ["0", "NAN", "NONE"]: 
-                                        # --- CONVERSION BOUTEILLES -> CARTONS (PROD) ---
                                         uc_prod = dict_details.get(code, {}).get('uc', 6.0) or 6.0
                                         qte_cartons = qte / uc_prod
                                         liste_prod.append({'ARTICLE': code, 'QTE_PRODUITE': qte_cartons, 'DATE_PROD': d})
@@ -430,7 +433,6 @@ if st.session_state['role'] == 'admin':
 
                     df_commandes_brut = lire_fichier(fichier_commandes, skip_cmd); colonnes_cmd = df_commandes_brut.columns.astype(str).str.upper().str.replace(r'[^A-Z]', '', regex=True); df_commandes_brut.columns = colonnes_cmd
                     
-                    # NOUVEAUTÉ : DÉTECTION DES NOUVELLES COLONNES (FACTURATION, LIVRAISON, CARTONS)
                     col_art_cmd = next((c for c in ['ARTICLECODE', 'CODEARTICLE', 'ARTICLE'] if c in colonnes_cmd), None)
                     col_date_cmd = next((c for c in ['DATECDE', 'DATECOMMANDE', 'DATECREATION', 'DATE'] if c in colonnes_cmd), None)
                     
@@ -453,12 +455,9 @@ if st.session_state['role'] == 'admin':
                     df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
                     df_commandes['DATE_CDE'] = pd.to_datetime(df_commandes_brut[col_date_cmd], dayfirst=True, errors='coerce')
                     
-                    # NOUVEAUTÉ : GESTION INTELLIGENTE DES QUANTITÉS
                     if col_qte_cmd_cartons:
-                        # Si on trouve NB CARTONS, on prend la valeur telle quelle !
                         df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd_cartons])
                     else:
-                        # Sinon on prend les bouteilles et on les divise
                         df_commandes['QUANTITE'] = nettoyage_quantite(df_commandes_brut[col_qte_cmd_bouteilles])
                         df_commandes['QUANTITE'] = df_commandes.apply(lambda r: r['QUANTITE'] / (dict_details.get(r['ARTICLE_CODE'], {}).get('uc', 6.0) or 6.0), axis=1)
 
@@ -470,10 +469,7 @@ if st.session_state['role'] == 'admin':
                     df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
                     df_commandes['REF_CLIENT'] = df_commandes_brut[col_ref_client].astype(str).replace('nan', '', regex=True).replace('None', '', regex=True) if col_ref_client else ""
                     
-                    # NOUVEAUTÉ : ATTRIBUTION DU NIVEAU DE PRIORITÉ
                     df_commandes['NIVEAU_PRIO'] = df_commandes['CLIENT_FACT'].apply(lambda x: 0 if any(vip in str(x).upper() for vip in liste_vip) else 1)
-                    
-                    # Tri par Priorité (0 d'abord) PUIS par Date de commande
                     df_commandes = df_commandes.dropna(subset=['DATE_CDE']).sort_values(by=['NIVEAU_PRIO', 'DATE_CDE'])
 
                     def get_cascade_prepas(art_code):
@@ -516,7 +512,7 @@ if st.session_state['role'] == 'admin':
                             'Ref_Client': clean_nan(commande['REF_CLIENT']),
                             'Date_Commande': commande['DATE_CDE'], 
                             'Client_Facturation': commande['CLIENT_FACT'],
-                            'Client': commande['CLIENT_LIV'], # Gardé pour compatibilité Front-end
+                            'Client': commande['CLIENT_LIV'],
                             'Article': article, 
                             'Qte_Demandée': int(commande['QUANTITE']), 
                             'Tiré_Stock': int(qte_prise_stock), 
