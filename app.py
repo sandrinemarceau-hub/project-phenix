@@ -676,8 +676,8 @@ elif st.session_state['role'] == 'client':
             
         items_count = len(lignes)
 
-        if statut_cmd == 'Fulfilled': badge_text = "🟢 Ready"
-        elif statut_cmd == 'Pending': badge_text = "🟡 Pending"
+        if statut_cmd == 'Fulfilled': badge_text = "✅ Ready"
+        elif statut_cmd == 'Pending': badge_text = "🔵 Pending"
         else: badge_text = "🔴 Unfulfilled"
 
         titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
