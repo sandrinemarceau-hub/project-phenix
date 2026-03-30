@@ -338,7 +338,7 @@ if st.session_state['role'] == 'admin':
         
         st.divider()
         st.write("🌍 **Adresses par défaut (Divers)**")
-        exp_row = st.text_area("Exportateur (Fallback Divers)", "SOVEREIGN BRANDS, LLC \nLuc Belaire LLC<br/>1300 Old Skokie Valley Rd, Suite A\nHighland Park, IL 60035, USA", height=80)
+        exp_row = st.text_area("Exportateur (Fallback Divers)", "SOVEREIGN BRANDS, LLC \n1300 Old Skokie Valley Rd, Suite A\nHighland Park, IL 60035, USA", height=80)
         
     settings_pdf = {
         'contact': pdf_contact, 'horaires': pdf_horaires, 'adresse_veuve': pdf_adresse_veuve, 'exp_row': exp_row
