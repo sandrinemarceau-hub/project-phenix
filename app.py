@@ -264,7 +264,7 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     pays = clean_nan(lignes.iloc[0]['Pays'])
     ref_client_combinee = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
     
-    # LA NOUVELLE REFERENCE STRICTE (Colonne E) POUR LE CHAMP CUSTOMER
+    # LA REFERENCE STRICTE (Colonne E) POUR LE CHAMP CUSTOMER
     ref_client_stricte = clean_nan(lignes.iloc[0].get('Ref_Client_Stricte', ''))
     
     adresse_enlevement = app_settings['adresse_veuve']
@@ -358,6 +358,7 @@ if st.session_state['role'] == 'admin':
 
     st.divider()
 
+    # LE BOUTON NE FAIT QUE LE CALCUL DESORMAIS (L'AFFICHAGE EST EN DESSOUS)
     if st.button("🚀 Calculer et Sauvegarder la Base", type="primary", use_container_width=True):
         if fichier_stock and fichiers_prod and fichier_commandes:
             with st.spinner('Analyse, Auto-Apprentissage et Sauvegarde en cours...'):
@@ -546,34 +547,45 @@ if st.session_state['role'] == 'admin':
                     
                     st.success("✅ Calcul terminé ! La base a été sauvegardée et est maintenant visible par les clients sur le Front Office.")
                     
-                    df_admin_view = df_final.copy()
-                    df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés', 'Ref_Client': 'Référence_Client', 'Client': 'Client_Livraison'}, inplace=True)
-                    colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Ref_Client_Stricte']]
-                    
-                    # NOUVEAUTÉ : TABLEAU DE BORD DE CONTRÔLE DES DATES
-                    st.markdown("### 📊 Analyse des disponibilités")
-                    lignes_sans_date = df_admin_view[df_admin_view['Date_Disponibilité'] == 'Pas de date']
-                    
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Total des lignes traitées", len(df_admin_view))
-                    c2.metric("Lignes 'En Stock' (Immédiat)", len(df_admin_view[df_admin_view['Statut'] == 'En Stock']))
-                    c3.metric("🚨 Lignes sans date (Rupture)", len(lignes_sans_date))
-                    
-                    afficher_ruptures = st.toggle("🚨 N'afficher que les lignes sans date (pour investigation)")
-                    
-                    if afficher_ruptures:
-                        st.dataframe(lignes_sans_date[colonnes_a_afficher], use_container_width=True)
-                    else:
-                        st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
-                    
-                    buf_admin = io.BytesIO()
-                    with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_admin_view.to_excel(writer, index=False)
-                    st.download_button("📥 Télécharger le Résultat Global (Excel)", data=buf_admin.getvalue(), file_name="Resultat_Global_Logistique.xlsx", type="primary", use_container_width=True)
-                    
                 except Exception as e:
                     import traceback
                     st.error(f"Erreur : {e}\n{traceback.format_exc()}")
         else: st.warning("Veuillez déposer tous les fichiers.")
+
+    # --- AFFICHAGE HORS DU BOUTON (PERMET AU CURSEUR DE FONCTIONNER SANS DISPARAÎTRE) ---
+    if os.path.exists('base_logistique.pkl'):
+        st.divider()
+        try:
+            cache = pd.read_pickle('base_logistique.pkl')
+            df_admin_view = cache['df_final'].copy()
+            
+            df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés', 'Ref_Client': 'Référence_Client', 'Client': 'Client_Livraison'}, inplace=True)
+            colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Ref_Client_Stricte']]
+            
+            st.markdown("### 📊 Analyse des disponibilités")
+            lignes_sans_date = df_admin_view[df_admin_view['Date_Disponibilité'] == 'Pas de date']
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total des lignes traitées", len(df_admin_view))
+            c2.metric("Lignes 'En Stock' (Immédiat)", len(df_admin_view[df_admin_view['Statut'] == 'En Stock']))
+            c3.metric("🚨 Lignes sans date (Rupture)", len(lignes_sans_date))
+            
+            afficher_ruptures = st.toggle("🚨 N'afficher que les lignes sans date (pour investigation)")
+            
+            if afficher_ruptures:
+                if lignes_sans_date.empty:
+                    st.success("🎉 Excellente nouvelle : absolument toutes les lignes de commande ont trouvé une date de disponibilité (en stock ou en production) ! Il n'y a aucune rupture totale.")
+                else:
+                    st.dataframe(lignes_sans_date[colonnes_a_afficher], use_container_width=True)
+            else:
+                st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
+            
+            buf_admin = io.BytesIO()
+            with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_admin_view.to_excel(writer, index=False)
+            st.download_button("📥 Télécharger le Résultat Global (Excel)", data=buf_admin.getvalue(), file_name="Resultat_Global_Logistique.xlsx", type="primary", use_container_width=True)
+            
+        except Exception as e:
+            st.error("Impossible d'afficher la base. Veuillez relancer un calcul.")
 
 # ==========================================
 # ESPACE CLIENT (FRONT OFFICE)
@@ -668,6 +680,7 @@ elif st.session_state['role'] == 'client':
     with pd.ExcelWriter(buf_global, engine='openpyxl') as writer: df_client_export.to_excel(writer, index=False)
     col_btn_excel.download_button("Export to Excel", data=buf_global.getvalue(), file_name="Sovereign_Orders.xlsx", use_container_width=True)
     
+    # Boutons gardés en décoration selon votre choix (désactivés)
     col_btn_import.button("Import Orders", use_container_width=True, disabled=True)
     col_btn_new.button("+ New Order", type="primary", use_container_width=True, disabled=True)
 
@@ -692,7 +705,6 @@ elif st.session_state['role'] == 'client':
         texte_recherche = f"{cmd} {lignes['Client'].iloc[0]}".lower()
         if search_query and search_query.lower() not in texte_recherche: continue
 
-        # NOUVEAUTÉ : Le client utilisé pour le titre est le client livré (LEDROP NIGERIA)
         client_nom = str(lignes.iloc[0].get('Client', 'Inconnu'))
         pays_nom = str(lignes.iloc[0]['Pays'])
         if "ETATS" in pays_nom.upper() or "USA" in pays_nom.upper(): pays_nom_display = "USA"
@@ -710,7 +722,6 @@ elif st.session_state['role'] == 'client':
         elif statut_cmd == 'Pending': badge_text = "🟡 Pending"
         else: badge_text = "🔴 Unfulfilled"
 
-        # NOUVEAUTÉ : Le titre de l'accordéon affiche la double référence (PO 36 / LBIL6526)
         ref_combinee = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
         titre_accordian = f"{ref_combinee}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
