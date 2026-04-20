@@ -139,7 +139,6 @@ if FPDF_OK:
             self.set_xy(marge_x, y_curr + total_h)
 
 def generer_pl_unique(cmd, lignes, dict_details, app_settings):
-    # Distinction client facturé (pour entête) et livré (pour consignee)
     client_fact = str(lignes.iloc[0].get('Client_Facturation', lignes.iloc[0]['Client']))
     client_liv = str(lignes.iloc[0]['Client'])
     
@@ -150,7 +149,6 @@ def generer_pl_unique(cmd, lignes, dict_details, app_settings):
 
     client_fact_upper = client_fact.upper()
     
-    # ADRESSES DYNAMIQUES SELON L'ENTITÉ JURIDIQUE
     if "SOVEREIGN BRANDS" in client_fact_upper or "LUC BELAIRE LLC" in client_fact_upper:
         exp_text_html = "SOVEREIGN BRANDS, LLC / Luc Belaire LLC<br/>1300 Old Skokie Valley Rd, Suite A<br/>Highland Park, IL 60035, USA"
     elif "LUC BELAIRE INTERNATIONAL" in client_fact_upper:
@@ -264,7 +262,11 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
         t_palettes += qte / cas_pal if cas_pal > 0 else 0
 
     pays = clean_nan(lignes.iloc[0]['Pays'])
-    ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
+    ref_client_combinee = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
+    
+    # LA NOUVELLE REFERENCE STRICTE (Colonne E) POUR LE CHAMP CUSTOMER
+    ref_client_stricte = clean_nan(lignes.iloc[0].get('Ref_Client_Stricte', ''))
+    
     adresse_enlevement = app_settings['adresse_veuve']
 
     if not FPDF_OK: return b""
@@ -280,13 +282,15 @@ def generer_rdv_unique(cmd, lignes, dict_details, app_settings):
     pdf.draw_harmonized_row("Contact", app_settings['contact'])
     pdf.draw_harmonized_row("Order Number", str(cmd))
     
-    # NOUVEAUTÉ ICI : On affiche la référence Client (Colonne E de votre fichier) sur la ligne Customer
-    if ref_client:
-        pdf.draw_harmonized_row("Customer", ref_client)
-    else:
-        pdf.draw_harmonized_row("Customer", "-")
+    if ref_client_combinee:
+        pdf.draw_harmonized_row("Customer PO / Ref", ref_client_combinee)
         
     pdf.draw_harmonized_row("Country of Delivery", pays)
+    
+    if ref_client_stricte:
+        pdf.draw_harmonized_row("Customer", ref_client_stricte)
+    else:
+        pdf.draw_harmonized_row("Customer", "-")
     
     pdf.draw_harmonized_row("Number of Pallets", f"{int(math.ceil(t_palettes))} Pallet(s)")
     pdf.draw_harmonized_row("Total Weight", f"{format_num(t_poids)} KG")
@@ -331,10 +335,8 @@ if st.session_state['role'] == 'admin':
         
         st.divider()
         st.write("📝 **Paramètres d'Enlèvement**")
-        # MODIFICATIONS DES VALEURS PAR DÉFAUT ICI :
         pdf_contact = st.text_input("Contact Email", "sandrine.marceau@fpvd.fr")
         pdf_horaires = st.text_input("Horaires", "8h00 - 12h00 ; 13h00 - 16h00") 
-        
         pdf_adresse_veuve = st.text_area("Adresse (Veuve Ambal)", "VEUVE AMBAL\n32 rue de la Croix Clément\n71530 Champforgeuil", height=80)
         
         st.divider()
@@ -439,18 +441,19 @@ if st.session_state['role'] == 'admin':
                     
                     col_qte_cmd_cartons = next((c for c in ['NBCARTONS', 'CARTONS'] if c in colonnes_cmd), None)
                     col_qte_cmd_bouteilles = next((c for c in ['QTEUBCDETOTAL', 'QTEUBCDE', 'QUANTITE', 'QTE', 'TOTAL', 'TOTALGNRAL', 'TOTALGENERAL'] if c in colonnes_cmd), None)
-                    
                     col_num_cmd = next((c for c in ['NUMCDE', 'NUMCOMMANDE', 'COMMANDE'] if c in colonnes_cmd), None)
                     
+                    # Extraction des colonnes de référence D et E
+                    col_num_cmd_clt = next((c for c in ['NUMCMDCLT', 'PO'] if c in colonnes_cmd), None)
+                    col_ref_cmd_clt = next((c for c in ['REFCMDCLT', 'REFCLIENT', 'REFERENCECLIENT', 'CDECLIENT'] if c in colonnes_cmd), None)
+                    
                     col_client_fact = next((c for c in ['CLIENTNOM', 'NOMCLIENTFACTURATION', 'CLIENT'] if c in colonnes_cmd), None)
-                    col_client_liv = next((c for c in ['EXPENOMCLIENT', 'CONSIGNEE', 'DESTINATAIRE'] if c in colonnes_cmd), None)
+                    col_client_liv = next((c for c in ['EXPENOMCLIENT', 'CONSIGNEE', 'DESTINATAIRE', 'EXPE'] if c in colonnes_cmd), None)
                     if not col_client_liv: col_client_liv = col_client_fact
                     
                     col_adresse = next((c for c in colonnes_cmd if 'ADRESSE' in c or 'ADR' in c), None)
                     col_ville = next((c for c in colonnes_cmd if any(k in c for k in ['EXPEVILLE', 'VILLE', 'CITY'])), None)
                     col_pays = next((c for c in colonnes_cmd if any(k in c for k in ['EXPEPAYS', 'PAYS', 'COUNTRY'])), None)
-                    
-                    col_ref_client = next((c for c in ['REFCMDCLT', 'REFCLIENT', 'REFERENCECLIENT', 'PO', 'CDECLIENT', 'CUSTOMERREF', 'VOTREREF'] if c in colonnes_cmd), None)
                     
                     df_commandes = pd.DataFrame()
                     df_commandes['ARTICLE_CODE'] = nettoyage_extreme(df_commandes_brut[col_art_cmd])
@@ -468,7 +471,15 @@ if st.session_state['role'] == 'admin':
                     df_commandes['ADRESSE'] = df_commandes_brut[col_adresse] if col_adresse else ""
                     df_commandes['VILLE'] = df_commandes_brut[col_ville] if col_ville else ""
                     df_commandes['PAYS'] = df_commandes_brut[col_pays] if col_pays else ""
-                    df_commandes['REF_CLIENT'] = df_commandes_brut[col_ref_client].astype(str).replace('nan', '', regex=True).replace('None', '', regex=True) if col_ref_client else ""
+                    
+                    # Combinaison des deux références (PO 36 / LBIL6526)
+                    s_ref1 = df_commandes_brut[col_num_cmd_clt].astype(str).replace(['nan', 'None'], '').str.strip() if col_num_cmd_clt else pd.Series([""]*len(df_commandes_brut))
+                    s_ref2 = df_commandes_brut[col_ref_cmd_clt].astype(str).replace(['nan', 'None'], '').str.strip() if col_ref_cmd_clt else pd.Series([""]*len(df_commandes_brut))
+                    def combine_refs(a, b):
+                        if a and b and a != b: return f"{a} / {b}"
+                        return a or b or ""
+                    df_commandes['REF_COMBINEE'] = [combine_refs(a, b) for a, b in zip(s_ref1, s_ref2)]
+                    df_commandes['REF_CLIENT_STRICTE'] = s_ref2
                     
                     df_commandes['NIVEAU_PRIO'] = df_commandes['CLIENT_FACT'].apply(lambda x: 0 if any(vip in str(x).upper() for vip in liste_vip) else 1)
                     df_commandes = df_commandes.dropna(subset=['DATE_CDE']).sort_values(by=['NIVEAU_PRIO', 'DATE_CDE'])
@@ -510,7 +521,8 @@ if st.session_state['role'] == 'admin':
                         
                         resultats.append({
                             'Num_Commande': commande['NUM_CDE'], 
-                            'Ref_Client': clean_nan(commande['REF_CLIENT']),
+                            'Ref_Client': clean_nan(commande['REF_COMBINEE']),
+                            'Ref_Client_Stricte': clean_nan(commande['REF_CLIENT_STRICTE']),
                             'Date_Commande': commande['DATE_CDE'], 
                             'Client_Facturation': commande['CLIENT_FACT'],
                             'Client': commande['CLIENT_LIV'],
@@ -536,8 +548,23 @@ if st.session_state['role'] == 'admin':
                     
                     df_admin_view = df_final.copy()
                     df_admin_view.rename(columns={'Manquant': 'Cartons_Manquants', 'Qte_Demandée': 'Cartons_Commandés', 'Ref_Client': 'Référence_Client', 'Client': 'Client_Livraison'}, inplace=True)
-                    colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville']]
-                    st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
+                    colonnes_a_afficher = [c for c in df_admin_view.columns if c not in ['Adresse', 'Ville', 'Ref_Client_Stricte']]
+                    
+                    # NOUVEAUTÉ : TABLEAU DE BORD DE CONTRÔLE DES DATES
+                    st.markdown("### 📊 Analyse des disponibilités")
+                    lignes_sans_date = df_admin_view[df_admin_view['Date_Disponibilité'] == 'Pas de date']
+                    
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Total des lignes traitées", len(df_admin_view))
+                    c2.metric("Lignes 'En Stock' (Immédiat)", len(df_admin_view[df_admin_view['Statut'] == 'En Stock']))
+                    c3.metric("🚨 Lignes sans date (Rupture)", len(lignes_sans_date))
+                    
+                    afficher_ruptures = st.toggle("🚨 N'afficher que les lignes sans date (pour investigation)")
+                    
+                    if afficher_ruptures:
+                        st.dataframe(lignes_sans_date[colonnes_a_afficher], use_container_width=True)
+                    else:
+                        st.dataframe(df_admin_view[colonnes_a_afficher], use_container_width=True)
                     
                     buf_admin = io.BytesIO()
                     with pd.ExcelWriter(buf_admin, engine='openpyxl') as writer: df_admin_view.to_excel(writer, index=False)
@@ -665,7 +692,8 @@ elif st.session_state['role'] == 'client':
         texte_recherche = f"{cmd} {lignes['Client'].iloc[0]}".lower()
         if search_query and search_query.lower() not in texte_recherche: continue
 
-        client_nom = str(lignes.iloc[0]['Client'])
+        # NOUVEAUTÉ : Le client utilisé pour le titre est le client livré (LEDROP NIGERIA)
+        client_nom = str(lignes.iloc[0].get('Client', 'Inconnu'))
         pays_nom = str(lignes.iloc[0]['Pays'])
         if "ETATS" in pays_nom.upper() or "USA" in pays_nom.upper(): pays_nom_display = "USA"
         elif "CANADA" in pays_nom.upper(): pays_nom_display = "Canada"
@@ -678,18 +706,16 @@ elif st.session_state['role'] == 'client':
             
         items_count = len(lignes)
 
-        if statut_cmd == 'Fulfilled': badge_text = "✅ Ready"
-        elif statut_cmd == 'Pending': badge_text = "🔵 Pending"
+        if statut_cmd == 'Fulfilled': badge_text = "🟢 Ready"
+        elif statut_cmd == 'Pending': badge_text = "🟡 Pending"
         else: badge_text = "🔴 Unfulfilled"
 
-        titre_accordian = f"#{cmd}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
+        # NOUVEAUTÉ : Le titre de l'accordéon affiche la double référence (PO 36 / LBIL6526)
+        ref_combinee = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
+        titre_accordian = f"{ref_combinee}   |   {order_date_simulated}   |   {client_nom}   |   {pays_nom_display}   |   Items: {items_count}   |   {badge_text}"
         
         with st.expander(titre_accordian):
             
-            ref_client = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
-            if ref_client:
-                st.markdown(f"<span style='color:#6b778c; font-size:0.9rem;'><strong>PO / Ref:</strong> {ref_client}</span><br><br>", unsafe_allow_html=True)
-
             html_table = "<div style='overflow-x:auto;'><table class='custom-table'><thead><tr><th>Product Details</th><th>Qty (Cases)</th><th>Availability</th><th>Status</th></tr></thead><tbody>"
             
             for _, row in lignes.iterrows():
@@ -706,13 +732,13 @@ elif st.session_state['role'] == 'client':
                     qty_html = f"<b>{qte}</b>"
 
                 if statut_fr == "Rupture": 
-                    pill = "<span class='badge-blocked'>Out of stock</span>"
+                    pill = "<span class='badge-blocked'>🔴 Out of stock</span>"
                     date_display = "TBD"
                 elif "Attente Prod" in statut_fr: 
-                    pill = "<span class='badge-pending'>In Production</span>"
+                    pill = "<span class='badge-pending'>🟡 In Production</span>"
                     date_display = date
                 else: 
-                    pill = "<span class='badge-ready'>On Hand</span>"
+                    pill = "<span class='badge-ready'>🟢 On Hand</span>"
                     date_display = "Immediate"
 
                 html_table += f"<tr><td><span class='item-name'>{libelle}</span><span class='item-sku'>SKU: {art}</span></td><td>{qty_html}</td><td>{date_display}</td><td>{pill}</td></tr>"
