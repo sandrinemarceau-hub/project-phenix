@@ -718,8 +718,8 @@ elif st.session_state['role'] == 'client':
             
         items_count = len(lignes)
 
-        if statut_cmd == 'Fulfilled': badge_text = "🟢 Ready"
-        elif statut_cmd == 'Pending': badge_text = "🟡 Pending"
+        if statut_cmd == 'Fulfilled': badge_text = "✅ Ready"
+        elif statut_cmd == 'Pending': badge_text = "⏳Pending"
         else: badge_text = "🔴 Unfulfilled"
 
         ref_combinee = clean_nan(lignes.iloc[0].get('Ref_Client', ''))
@@ -746,10 +746,10 @@ elif st.session_state['role'] == 'client':
                     pill = "<span class='badge-blocked'>🔴 Out of stock</span>"
                     date_display = "TBD"
                 elif "Attente Prod" in statut_fr: 
-                    pill = "<span class='badge-pending'>🟡 In Production</span>"
+                    pill = "<span class='badge-pending'>💬 In Production</span>"
                     date_display = date
                 else: 
-                    pill = "<span class='badge-ready'>🟢 On Hand</span>"
+                    pill = "<span class='badge-ready'👌 On Hand</span>"
                     date_display = "Immediate"
 
                 html_table += f"<tr><td><span class='item-name'>{libelle}</span><span class='item-sku'>SKU: {art}</span></td><td>{qty_html}</td><td>{date_display}</td><td>{pill}</td></tr>"
